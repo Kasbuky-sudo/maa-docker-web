@@ -1,6 +1,52 @@
 /* MAA Docker Web — page-specific styles on top of windows-ui */
 :root { --mdw-ok: #107c10; --mdw-bad: #d13438; --mdw-warn: #797673; }
 
+/* ---- app shell layout: windows-ui ships components, not an app shell ---- */
+body { display: flex; min-height: 100vh; }
+
+/* sidebar: keep the navbar permanently visible on desktop */
+.app-navbar-wrap {
+  position: sticky;
+  top: 0;
+  flex: 0 0 240px;
+  height: 100vh;
+  overflow-y: auto;
+  border-right: 1px solid rgba(0,0,0,.08);
+  background: var(--color-background-secondary, #f3f3f3);
+}
+[data-theme="dark"] .app-navbar-wrap { border-right-color: rgba(255,255,255,.08); }
+.app-navbar-wrap nav.app-navbar {
+  position: relative;
+  transform: none !important;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+.app-navbar-topbar-mobile { display: none !important; }
+
+/* content column */
+.app-page-container {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-top: 20px;
+}
+
+@media (max-width: 760px) {
+  /* small screens: fall back to windows-ui overlay behavior */
+  body { display: block; }
+  .app-navbar-wrap {
+    position: fixed;
+    flex: none;
+    width: 240px;
+    z-index: 5;
+    transform: translateX(-100%);
+    transition: transform .2s ease-in-out;
+  }
+  .app-navbar-wrap.collapsed-float { transform: translateX(0); }
+  .app-navbar-topbar-mobile { display: flex !important; }
+  .app-page-container { padding-top: 56px; }
+}
+
 .mdw-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin: 16px 0; }
 .mdw-card { background: var(--WindowBackground, #f3f3f3); border: 1px solid rgba(0,0,0,.08); border-radius: 8px; padding: 14px 16px; }
 [data-theme="dark"] .mdw-card { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.08); }
