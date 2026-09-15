@@ -251,7 +251,8 @@ const routes = {
       res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
       res.end(buf);
     });
-    return true; // 已手工接管响应
+    // 返回 undefined：调度器约定「结果非 undefined 就 sendJson」，
+    // 截图路由自己写响应（异步），这里绝不能返回任何值
   },
 
   async 'POST /api/copilot/start'(req) {
