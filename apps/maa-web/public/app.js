@@ -216,6 +216,100 @@ var MULTI_IDS = {
   'r': 'confirm'          // r-confirm-3/4/5/6
 };
 
+/** 干员识别真实结果（OperBoxInfo）：已拥有干员 + 精/等级/潜能 */
+function toolsOperatorReal(r) {
+  var owned = (r.owned || []).slice().sort(function (a, b) { return (b.rarity - a.rarity) || a.name.localeCompare(b.name); });
+  var body =
+    '<div class="mdw-op-head">识别' + (r.done ? '完成' : '进行中') + '</div>' +
+    '<div class="mdw-op-counters">' +
+      '<span class="mdw-op-counter">未拥有: ' + Math.max(0, (r.total || 0) - (r.ownedCount || owned.length)) + '</span>' +
+      '<span class="mdw-op-counter">已拥有: ' + (r.ownedCount || owned.length) + '</span>' +
+      '<span class="mdw-op-counter">总计: ' + (r.total || owned.length) + '</span>' +
+    '</div>' +
+    '<div class="mdw-op-grid">' + owned.map(function (o) {
+      return '<div class="mdw-op-card" title="精' + o.elite + ' Lv' + o.level + ' 潜能' + o.potential + '">' +
+        '<div class="mdw-op-name">' + esc(o.name) + '</div>' +
+        '<div class="mdw-op-stars r' + o.rarity + '">' + '★'.repeat(o.rarity) + '</div>' +
+        '<div class="mdw-muted" style="font-size:11.5px;margin-top:2px">精' + o.elite + ' Lv' + o.level + ' · 潜' + o.potential + '</div>' +
+      '</div>';
+    }).join('') + '</div>';
+  var cfg = '<div class="mdw-cfg-line"><span>导出到:</span>' +
+    selectHtml([['clipboard', '剪切板'], ['json', 'JSON'], ['markdown', 'Markdown'], ['csv', 'CSV']], 'clipboard', 'o-export') + '</div>' +
+    '<button type="button" class="app-btn" id="o-export-btn">导出</button>';
+  return '<div class="mdw-tool">' +
+      '<div class="mdw-tool-head"><div class="mdw-tool-title">干员识别</div>' +
+      '<div class="mdw-tool-meta">MaaCore 实时识别结果（OperBoxInfo）</div></div>' +
+      '<div class="mdw-tool-body">' + body + '</div>' +
+      '<div class="mdw-tool-foot">' + cfg +
+      '<button type="button" class="app-btn mdw-btn-primary mdw-tool-start" id="tools-start">再次识别</button></div>' +
+    '</div>';
+}
+
+/** 仓库识别真实结果（DepotInfo）：{itemId: qty} → 名称+数量 */
+function toolsDepotReal(r) {
+  var body = '<div class="mdw-op-head">识别' + (r.done ? '完成' : '进行中') + '</div>' +
+    '<div class="mdw-muted" style="text-align:center;margin-bottom:12px">共 ' + (r.items || []).length +
+    ' 种物品 · ' + esc(new Date(r.at).toLocaleTimeString()) + '</div>' +
+    '<div class="mdw-depot-grid2">' + (r.items || []).map(function (it) {
+      return '<div class="mdw-depot-card2">' +
+        '<div class="mdw-depot-icon2">' + esc(String(it.name).slice(0, 1)) + '</div>' +
+        '<div class="mdw-depot-text"><div class="mdw-depot-name2">' + esc(it.name) + '</div>' +
+        '<div class="mdw-depot-qty2">' + esc(String(it.count)) + '</div></div>' +
+      '</div>';
+    }).join('') + '</div>';
+  var cfg = '<div class="mdw-cfg-line"><span>导出到:</span>' +
+    selectHtml([['penguin', '企鹅物流刷图规划'], ['toolbox', '明日方舟工具箱'], ['markdown', 'Markdown'], ['csv', 'CSV']], 'penguin', 'd-export') + '</div>' +
+    '<button type="button" class="app-btn" id="d-export-btn">导出</button>';
+  return '<div class="mdw-tool">' +
+      '<div class="mdw-tool-head"><div class="mdw-tool-title">仓库识别</div>' +
+      '<div class="mdw-tool-meta">MaaCore 实时识别结果（DepotInfo）</div></div>' +
+      '<div class="mdw-tool-body">' + body + '</div>' +
+      '<div class="mdw-tool-foot">' + cfg +
+      '<button type="button" class="app-btn mdw-btn-primary mdw-tool-start" id="tools-start">再次识别</button></div>' +
+    '</div>';
+}
+
+/** 公招识别真实结果（RecruitResult）：tags + 每组组合的最高星级 */
+function toolsRecruitReal(r) {
+  var body =
+    '<div class="mdw-rc-result">识别结果: ' +
+      (r.tags || []).map(function (t) { return '<span class="mdw-rc-tag">' + esc(t) + '</span>'; }).join('') +
+    '</div>' +
+    '<div class="mdw-muted" style="margin:-6px 0 12px">最高可出 ' + esc(r.level) + '★ · 识别于 ' +
+      esc(new Date(r.at).toLocaleTimeString()) + '</div>' +
+    (r.groups || []).map(function (g) {
+      return '<div class="mdw-rc-group">' +
+        '<div class="mdw-rc-group-head">' + esc(g.level) + '★ Tags: <span class="mdw-rc-group-tag">' +
+          esc((g.tags || []).join(' + ')) + '</span></div>' +
+        '<div class="mdw-rc-ops">' + (g.opers || []).map(function (o) {
+          return '<span class="mdw-rc-op r' + o.level + '">' + esc(o.name) + '</span>';
+        }).join('') + '</div>' +
+      '</div>';
+    }).join('');
+
+  var times = [3, 4, 5, 6].map(function (n) {
+    return '<div class="mdw-rc-time-row">' +
+      '<label class="mdw-check"><input type="checkbox" class="app-checkbox" checked/><span>自动选择 ' + n + ' 星 Tags</span></label>' +
+      '<div class="mdw-rc-clock">' +
+        '<input type="number" class="app-input-text" min="0" max="23" value="09"/><span>:</span>' +
+        '<input type="number" class="app-input-text" min="0" max="59" value="00"/>' +
+      '</div></div>';
+  }).join('');
+
+  return '<div class="mdw-tool">' +
+      '<div class="mdw-tool-head"><div class="mdw-tool-title">公招识别</div>' +
+      '<div class="mdw-tool-meta">MaaCore 实时识别结果（RecruitResult）</div></div>' +
+      '<div class="mdw-tool-body">' + body + '</div>' +
+      '<div class="mdw-tool-foot">' +
+        '<div class="mdw-rc-cfg"><div class="mdw-rc-cfg-left">' +
+          '<label class="mdw-check"><input type="checkbox" class="app-checkbox" checked/><span>自动设置时间</span></label>' +
+          '<label class="mdw-check"><input type="checkbox" class="app-checkbox"/><span>显示干员潜能 (4/5/6★ Tags)</span></label>' +
+        '</div><div class="mdw-rc-cfg-mid">' + times + '</div></div>' +
+        '<button type="button" class="app-btn mdw-btn-primary mdw-tool-start" id="tools-start">再次识别</button>' +
+      '</div>' +
+    '</div>';
+}
+
 function optIdOf(el) {
   var id = el.id || '';
   if (el.dataset && el.dataset.facility) return 'facility';
@@ -1296,9 +1390,19 @@ function loadHomeData() {
     setText('home-res-version', text);
   }).catch(function () {});
   loadSchedule().then(function () {
-    var next = SCHEDULES.filter(function (s) { return s.enabled; }).sort(function (a, b) { return a.time < b.time ? -1 : 1; })[0];
-    setText('home-next-sched', next ? next.time : '未设置');
-    setText('home-next-sched-sub', next ? taskNamesOf(next.tasks) : '到「日程」页添加');
+    // 服务端调度器给出的下一班（比简单按时间排序准）
+    var withNext = SCHEDULES.filter(function (s) { return s.enabled && s.nextRun; })
+      .sort(function (a, b) { return a.nextRun < b.nextRun ? -1 : 1; });
+    var next = withNext[0];
+    if (next) {
+      var d = new Date(next.nextRun);
+      setText('home-next-sched', (d.getMonth() + 1) + '/' + d.getDate() + ' ' +
+        (d.getHours() < 10 ? '0' : '') + d.getHours() + ':' + (d.getMinutes() < 10 ? '0' : '') + d.getMinutes());
+      setText('home-next-sched-sub', taskNamesOf(next.tasks));
+    } else {
+      setText('home-next-sched', '未设置');
+      setText('home-next-sched-sub', '到「日程」页添加');
+    }
   });
   setText('nas-phase', PHASE_TEXT[RT.phase] || RT.phase);
 }
@@ -1763,24 +1867,32 @@ function refreshRogueDependent(keep) {
  * 服务端只存 {id, time, enabled, tasks:[任务id]}；repeat 是纯前端字段，
  * 存在 localStorage（服务端调度器尚未实现，见文档）。 */
 var SCHEDULES = [];
-var SCHED_REPEAT = {};      // id -> repeat
+var SCHEDULER = { running: false, lastTickAt: null };
 var REPEATS = [['daily', '每天'], ['weekdays', '工作日'], ['weekends', '周末'], ['mon', '每周一'], ['tue', '每周二'], ['wed', '每周三'], ['thu', '每周四'], ['fri', '每周五'], ['sat', '每周六'], ['sun', '每周日']];
 var schedSaveTimer = null;
 
 function schedRepeatOf(id) {
-  if (SCHED_REPEAT[id]) return SCHED_REPEAT[id];
-  try {
-    var all = JSON.parse(localStorage.getItem('mdw-sched-repeat') || '{}');
-    return all[id] || 'daily';
-  } catch (e) { return 'daily'; }
+  var e = SCHEDULES.filter(function (x) { return String(x.id) === String(id); })[0];
+  return (e && e.repeat) || 'daily';
 }
 function setSchedRepeat(id, v) {
-  SCHED_REPEAT[id] = v;
-  try {
-    var all = JSON.parse(localStorage.getItem('mdw-sched-repeat') || '{}');
-    all[id] = v;
-    localStorage.setItem('mdw-sched-repeat', JSON.stringify(all));
-  } catch (e) { /* ignore */ }
+  var e = SCHEDULES.filter(function (x) { return String(x.id) === String(id); })[0];
+  if (e) e.repeat = v;
+}
+
+/* 下次触发：优先用服务端调度器算出的时间（更准），拿不到再本地估算 */
+function schedNextText(s) {
+  if (!s.enabled) return '已停用';
+  var tail = s.lastResult && s.lastRun ? '（上次 ' + s.lastRun.slice(5) + ' ' + s.lastResult + '）' : '';
+  if (s.nextRun) {
+    var d = new Date(s.nextRun);
+    var now = new Date();
+    var sameDay = d.toDateString() === now.toDateString();
+    var hh = String(d.getHours()).length === 1 ? '0' + d.getHours() : d.getHours();
+    var mm = d.getMinutes() < 10 ? '0' + d.getMinutes() : d.getMinutes();
+    return (sameDay ? '今天 ' : (d.getMonth() + 1) + '/' + d.getDate() + ' ') + hh + ':' + mm + tail;
+  }
+  return nextRunText(s.repeat || 'daily', s.time) + tail;
 }
 
 function nextRunText(repeat, time) {
@@ -1801,8 +1913,13 @@ function taskNamesOf(ids) {
 function loadSchedule() {
   return GET('/api/tasks/schedule').then(function (r) {
     markOnline(true);
+    SCHEDULER = (r && r.scheduler) || SCHEDULER;
     SCHEDULES = (r.schedule || []).map(function (e) {
-      return { id: String(e.id), time: e.time, enabled: e.enabled !== false, tasks: e.tasks || [] };
+      return {
+        id: String(e.id), time: e.time, enabled: e.enabled !== false, tasks: e.tasks || [],
+        repeat: e.repeat || 'daily', lastRun: e.lastRun || null, lastResult: e.lastResult || null,
+        nextRun: e.nextRun || null,
+      };
     });
     return SCHEDULES;
   }).catch(function (e) { markOnline(false, e); return SCHEDULES; });
@@ -1814,7 +1931,7 @@ function saveSchedule() {
   schedSaveTimer = setTimeout(function () {
     PUT('/api/tasks/schedule', {
       schedule: SCHEDULES.map(function (s) {
-        return { id: s.id, time: s.time, enabled: s.enabled, tasks: s.tasks };
+        return { id: s.id, time: s.time, enabled: s.enabled, tasks: s.tasks, repeat: s.repeat || 'daily' };
       }),
     }).catch(function (e) { markOnline(false, e); });
   }, 400);
@@ -1829,7 +1946,8 @@ function pageSchedule(el) {
       '<div class="mdw-sched-actions">' +
         '<button type="button" class="app-btn" id="sched-add">+ 添加定时任务</button>' +
         '<button type="button" class="app-btn" id="sched-refresh">刷新</button>' +
-        '<span class="mdw-muted">计划保存在服务端（schedule.json）。注意：服务端定时调度器尚未实现，目前只保存计划不触发执行。</span>' +
+        '<span class="mdw-muted">计划保存在服务端（schedule.json），由服务端调度器按「时间 + 重复规则」触发；' +
+        (SCHEDULER.running ? '调度器运行中（每 30 秒检查一次）。' : '调度器未运行。') + '</span>' +
       '</div>' +
     '</div>';
   bindScheduleEvents(el);
@@ -1851,7 +1969,7 @@ function renderScheduleList() {
         REPEATS.map(function (r) { return '<option value="' + r[0] + '"' + (r[0] === rep ? ' selected' : '') + '>' + r[1] + '</option>'; }).join('') +
       '</select></div>' +
       '<span class="mdw-sched-tasks">' + esc(taskNamesOf(s.tasks)) + '</span>' +
-      '<span class="mdw-muted mdw-sched-next">' + (s.enabled ? nextRunText(rep, s.time) : '已停用') + '</span>' +
+      '<span class="mdw-muted mdw-sched-next">' + schedNextText(s) + '</span>' +
       '<button type="button" class="app-btn mdw-sched-del" data-id="' + esc(s.id) + '">删除</button>' +
     '</div>';
   }).join('');
@@ -1944,6 +2062,7 @@ function pushLogEntry(e) {
   if (LOG_ENTRIES.length > LOG_MAX) LOG_ENTRIES.splice(0, LOG_ENTRIES.length - LOG_MAX);
   appendLogRow(entry);
   appendTimelineRow(entry);
+  if (document.getElementById('cp-log')) renderCopilotLog();
 }
 
 function logRowText(e) {
@@ -2137,13 +2256,7 @@ function pageCopilot(el) {
             '<div class="mdw-cp-combo" id="cp-combo">' +
               '<input type="text" class="app-input-text mdw-cp-input" id="cp-path" placeholder="作业路径/神秘代码" autocomplete="off"/>' +
               '<div class="mdw-cp-dropdown" id="cp-dropdown">' +
-                '<div class="mdw-cp-file" data-name="OF-1_credit_fight.json">OF-1_credit_fight.json</div>' +
-                '<div class="mdw-cp-folder" data-expand="0">▸ 常规关卡</div>' +
-                '<div class="mdw-cp-file indent" data-name="沃尔岗山丘_Spier_Foothills.json">沃尔岗山丘_Spier_Foothills</div>' +
-                '<div class="mdw-cp-file indent" data-name="日达诺夫园区.json">日达诺夫园区</div>' +
-                '<div class="mdw-cp-file" data-name="荒废灯塔_abandoned_lighthouse.json">荒废灯塔_abandoned_lighthouse</div>' +
-                '<div class="mdw-cp-file" data-name="雷神工业测试平台_Raythean_Industries_Test_Platform.json">雷神工业测试平台_Raythean_Industries_Test_Platform</div>' +
-                '<div class="mdw-cp-file" data-name="ddd.json">ddd</div>' +
+                '<div class="mdw-muted" style="padding:6px 10px;font-size:12.5px">运行包自带作业（resource/copilot）</div>' +
               '</div>' +
             '</div>' +
             '<button type="button" class="app-btn mdw-cp-icon" id="cp-browse" title="打开作业文件（.json）"><i class="icons10 icons10-folder"></i></button>' +
@@ -2187,6 +2300,28 @@ function pageCopilot(el) {
 
   bindCopilotEvents(el);
   renderCopilotLog();
+  loadCopilotJobs().then(function (jobs) {
+    var dd = document.getElementById('cp-dropdown');
+    if (!dd) return;
+    var mine = copilotJobsForTab(copilotTab);
+    dd.innerHTML = '<div class="mdw-muted" style="padding:6px 10px;font-size:12.5px">' +
+      '运行包自带作业（' + mine.length + ' 个 / 共 ' + jobs.length + ' 个）</div>' +
+      (mine.length ? mine.map(function (j) {
+        return '<div class="mdw-cp-file" data-file="' + esc(j.file) + '">' + esc(j.file) +
+          (j.title ? '<span class="mdw-muted" style="font-size:12px">　' + esc(j.title) + '</span>' : '') + '</div>';
+      }).join('') : '<div class="mdw-muted" style="padding:6px 10px">此页签没有作业（运行包未就绪时会为空）</div>');
+    dd.querySelectorAll('.mdw-cp-file').forEach(function (f) {
+      f.addEventListener('mousedown', function (ev) {
+        ev.preventDefault();
+        var job = mine.filter(function (j) { return j.file === f.dataset.file; })[0];
+        var input = document.getElementById('cp-path');
+        if (input) input.value = job.file;
+        COPILOT_SELECTED[copilotTab] = job;
+        dd.style.display = 'none';
+        copilotLog('info', '已选择作业: ' + job.file + (job.stage ? '（关卡 ' + job.stage + '）' : ''));
+      });
+    });
+  });
 }
 
 function renderCopilotLog() {
@@ -2223,6 +2358,36 @@ function copilotQueueRender() {
 
 var COPILOT_QUEUE = [];
 var COPILOT_MULTI = false;
+var COPILOT_JOBS = null;          // 运行包自带的官方作业（GET /api/copilot/list）
+var COPILOT_SELECTED = {};        // 每个页签当前选中的作业对象
+
+var COPILOT_TYPE_OF_TAB = { main: 'main', sa: 'sss', pm: 'paradox', other: 'main' };
+
+function loadCopilotJobs() {
+  if (COPILOT_JOBS) return Promise.resolve(COPILOT_JOBS);
+  return GET('/api/copilot/list').then(function (r) {
+    COPILOT_JOBS = (r && r.jobs) || [];
+    return COPILOT_JOBS;
+  }).catch(function () { COPILOT_JOBS = []; return COPILOT_JOBS; });
+}
+
+function copilotJobsForTab(tab) {
+  var type = COPILOT_TYPE_OF_TAB[tab] || 'main';
+  return (COPILOT_JOBS || []).filter(function (j) { return j.type === type; });
+}
+
+/* 自动战斗的日志：直接用服务端实时日志（WS 推送到 LOG_ENTRIES），不再本地模拟 */
+function renderCopilotLog() {
+  var box = document.getElementById('cp-log');
+  if (!box) return;
+  var list = LOG_ENTRIES.slice(-60).reverse();
+  box.innerHTML = list.length
+    ? list.map(function (e) {
+        var lv = e.level === 'warning' ? 'warn' : e.level;
+        return '<div class="mdw-cp-line lv-' + esc(lv) + '">' + esc(e.t + ' ' + e.msg) + '</div>';
+      }).join('')
+    : '<div class="mdw-muted">还没有运行日志。连接设备后点「开始」，这里会显示 MaaCore 的实时输出。</div>';
+}
 
 function copilotWarn() { copilotLog('warn', COPILOT_WARN); }
 
@@ -2368,7 +2533,7 @@ function bindCopilotEvents(el) {
     });
   });
 
-  // 开始
+  // 开始：POST /api/copilot/start（真实下发到 MaaCore）
   var start = el.querySelector('#cp-start');
   if (start) start.addEventListener('click', function () {
     var path = (el.querySelector('#cp-path').value || '').trim();
@@ -2377,7 +2542,26 @@ function bindCopilotEvents(el) {
       copilotLog('warn', '正在使用「多作业模式」，但未添加任何作业');
       return;
     }
-    copilotSimulate(path);
+    var job = COPILOT_SELECTED[copilotTab];
+    if (COPILOT_MULTI && COPILOT_QUEUE.length) {
+      job = { file: COPILOT_QUEUE[0].name, type: COPILOT_SELECTED[copilotTab] && COPILOT_SELECTED[copilotTab].type || 'main' };
+    }
+    var body = {
+      file: (job && job.file) || path,
+      type: (COPILOT_TYPE_OF_TAB[copilotTab] || 'main'),
+      formation: !!(el.querySelector('#cp-auto-formation') && el.querySelector('#cp-auto-formation').checked),
+    };
+    var loopEn = el.querySelector('#cp-loop-en');
+    var loopNum = el.querySelector('#cp-loop');
+    if (loopEn && loopEn.checked && loopNum) body.loopTimes = Number(loopNum.value) || 1;
+    start.disabled = true;
+    POST('/api/copilot/start', body).then(function () {
+      copilotLog('info', '已下发作业 ' + body.file + '（类型 ' + body.type + '），日志见下方/日志页');
+      refreshRunnerStatus();
+    }).catch(function (e) {
+      copilotLog('error', '下发失败：' + e.message);
+      openInfoModal('无法开始自动战斗', e.message);
+    }).then(function () { start.disabled = false; });
   });
 }
 
@@ -2390,6 +2574,50 @@ var TOOLS_TABS = [
 ];
 
 /* 各工具状态（原型 mock，正式版由 /api/tools/* 与 MaaCore 回调填充） */
+/* 识别结果（GET /api/tools/results，由 MaaCore 回调填充） */
+var TOOL_RESULTS = { recruit: null, depot: null, operbox: null, busy: false, lastError: null, lastTask: null };
+var TOOL_POLL = null;
+var toolsEl = null;
+
+function loadToolResults() {
+  return GET('/api/tools/results').then(function (r) {
+    TOOL_RESULTS = r || TOOL_RESULTS;
+    return TOOL_RESULTS;
+  }).catch(function () { return TOOL_RESULTS; });
+}
+
+/* 开始识别：真实调用 MaaCore，并在结果到达后重绘 */
+function runRecognition(kind) {
+  var btn = toolsEl && toolsEl.querySelector('#tools-start');
+  if (btn) { btn.disabled = true; btn.textContent = '识别中…'; }
+  clearInterval(TOOL_POLL);
+  POST('/api/tools/run', { kind: kind }).then(function () {
+    var ticks = 0;
+    TOOL_POLL = setInterval(function () {
+      ticks += 1;
+      loadToolResults().then(function (r) {
+        var done = !r.busy && (r[kind === 'recruit' ? 'recruit' : kind === 'depot' ? 'depot' : 'operbox'] || r.lastError);
+        if (done || ticks > 160) {
+          clearInterval(TOOL_POLL);
+          if (toolsEl && toolsEl.querySelector('#tools-body')) {
+            toolsEl.querySelector('#tools-body').innerHTML = renderToolsContent();
+            bindToolsEvents(toolsEl);
+          }
+        }
+      });
+    }, 1500);
+  }).catch(function (e) {
+    if (btn) { btn.disabled = false; btn.textContent = '开始识别'; }
+    openInfoModal('无法开始识别', e.message);
+  });
+}
+
+function toolNotice(kind) {
+  var r = TOOL_RESULTS[kind];
+  if (r) return '';
+  return '<div class="mdw-tool-notice">以下为<b>界面示例数据</b>；点「开始识别」后由 MaaCore 识别并显示真实结果（需要已连接设备）。</div>';
+}
+
 var TOOL_STATE = {
   recruit: { last: '2026/9/16 00:18:13', detected: ['近卫干员', '狙击干员', '重装干员', '快速复活', '召唤'] },
   operator: { last: '2026/9/16 00:18:13' },
@@ -2400,6 +2628,11 @@ var TOOL_STATE = {
 };
 
 function pageTools(el) {
+  toolsEl = el;
+  loadToolResults().then(function () {
+    var body = document.getElementById('tools-body');
+    if (body && toolsTab && ['recruit', 'operator', 'depot'].indexOf(toolsTab) >= 0) body.innerHTML = renderToolsContent();
+  });
   el.innerHTML =
     '<div class="mdw-tools-tabs" id="tools-tabs">' +
       TOOLS_TABS.map(function (t) {
@@ -2453,6 +2686,8 @@ function mockPotential(name) {
 var NEW_OPS = ['正义骑士号', 'Friston-3', 'Castle-3'];
 
 function toolsRecruitContent() {
+  var real = TOOL_RESULTS.recruit;
+  if (real) return toolsRecruitReal(real);
   var st = TOOL_STATE.recruit;
   var groups = st.detected.map(function (tag) {
     var ops = recruitOpsForTag(tag).slice().sort(function (a, b) { return b.r - a.r; });
@@ -2500,7 +2735,7 @@ function toolsRecruitContent() {
         '<div class="mdw-tool-title">公招识别</div>' +
         '<div class="mdw-tool-meta">数据源：MAA resource/recruitment.json（' + MAA_RECRUIT.ops.length + ' 名干员 / ' + MAA_RECRUIT.tags.length + ' 个标签） · 上次同步 ' + esc(st.last) + '</div>' +
       '</div>' +
-      '<div class="mdw-tool-body">' + body + '</div>' +
+      '<div class="mdw-tool-body">' + toolNotice('recruit') + body + '</div>' +
       '<div class="mdw-tool-foot">' + cfg +
         '<button type="button" class="app-btn mdw-btn-primary mdw-tool-start" id="tools-start">开始识别</button>' +
       '</div>' +
@@ -2532,6 +2767,8 @@ function operMissingSet() {
 var OPER_MISSING = null;
 
 function toolsOperatorContent() {
+  var real = TOOL_RESULTS.operbox;
+  if (real && (real.owned || []).length) return toolsOperatorReal(real);
   var st = TOOL_STATE.operator;
   if (!OPER_MISSING) OPER_MISSING = operMissingSet();
   var owned = [], missingN = 0;
@@ -2542,6 +2779,7 @@ function toolsOperatorContent() {
     });
   });
   var body =
+    toolNotice('operbox') +
     '<div class="mdw-op-head">识别完成 特别关注会影响干员识别准确率，如有特别关注干员识别错误请自行判断。</div>' +
     '<div class="mdw-op-counters">' +
       '<span class="mdw-op-counter">未拥有: ' + missingN + '</span>' +
@@ -2570,8 +2808,11 @@ function toolsOperatorContent() {
 
 /* ============ 仓库识别 ============ */
 function toolsDepotContent() {
+  var real = TOOL_RESULTS.depot;
+  if (real && (real.items || []).length) return toolsDepotReal(real);
   var st = TOOL_STATE.depot;
   var body =
+    toolNotice('depot') +
     '<div class="mdw-op-head">识别完成</div>' +
     '<div class="mdw-depot-grid2">' + MAA_DEPOT_ITEMS.map(function (it) {
       return '<div class="mdw-depot-card2">' +
@@ -2770,6 +3011,8 @@ function loadRuntimeInfo() {
 function bindToolsEvents(el) {
   var startBtn = el.querySelector('#tools-start');
   if (startBtn) startBtn.addEventListener('click', function () {
+    var kind = toolsTab === 'operator' ? 'operbox' : toolsTab;
+    if (['recruit', 'depot', 'operbox'].indexOf(kind) >= 0) { runRecognition(kind); return; }
     var label = startBtn.textContent;
     startBtn.textContent = '执行中…';
     startBtn.disabled = true;

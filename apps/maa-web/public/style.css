@@ -1065,3 +1065,12 @@ body {
 .mdw-kv > b { font-weight: 600; word-break: break-all; text-align: right; }
 .mdw-ok { color: var(--color-success-default); font-weight: 700; }
 .mdw-bad { color: var(--color-danger-default); font-weight: 700; }
+
+/* 示例数据提示（真实结果到达前显示） */
+.mdw-tool-notice {
+  margin-bottom: 12px; padding: 8px 12px; font-size: 12.5px; line-height: 1.6;
+  border: 1px solid var(--mdw-border); border-left: 3px solid var(--mdw-accent);
+  border-radius: 6px; background: var(--mdw-card-2); color: var(--mdw-muted);
+}
+.mdw-tool-notice b { color: var(--mdw-text); }
+[data-theme="dark"] .mdw-tool-notice { background: #323232; }

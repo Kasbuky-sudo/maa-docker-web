@@ -142,7 +142,19 @@ function busy() {
   return ['loading', 'connecting', 'running', 'stopping'].includes(state.phase);
 }
 
+/* 回调订阅：其它模块（如 tools.js 捕获识别结果）可订阅全部回调 */
+const messageSubscribers = new Set();
+function onMessage(fn) {
+  messageSubscribers.add(fn);
+  return () => messageSubscribers.delete(fn);
+}
+
 function onCallback(msg, detailsJson) {
+  let parsedForSub = null;
+  try { parsedForSub = JSON.parse(detailsJson || '{}'); } catch { parsedForSub = {}; }
+  for (const fn of messageSubscribers) {
+    try { fn(msg, parsedForSub); } catch { /* 订阅者出错不影响主流程 */ }
+  }
   let d = {};
   try { d = JSON.parse(detailsJson || '{}'); } catch { /* ignore */ }
   const chain = (d.details && d.details.chain) || d.chain || '';
@@ -325,6 +337,64 @@ function buildParams(taskType, opts, extra) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** 把任务追加到实例上；jobs = [{taskType, params, label}] */
+function appendJobs(f, handle, jobs) {
+  const ids = [];
+  for (const j of jobs) {
+    const type = j.taskType || (j.task && j.task.taskType);
+    const label = j.label || (j.task && j.task.name) || type;
+    const id = f.appendTask(handle, type, JSON.stringify(j.params || {}));
+    if (!id || id < 0) throw new Error(`追加任务失败: ${label}`);
+    ids.push(id);
+    logger.info('runner', `追加任务 ${label} (#${id}) type=${type} params=${JSON.stringify(j.params || {})}`);
+  }
+  return ids;
+}
+
+/**
+ * 执行一组「一次性」任务（小工具识别、自动战斗作业等）。
+ * 复用 ensureSession，因此刚做过的连接测试可以直接接着用。
+ * jobs = [{taskType, params, label}]
+ */
+async function runTask(jobs, opts = {}) {
+  if (busy()) throw Object.assign(new Error('已有任务在执行中'), { statusCode: 409 });
+  const conn = readConnection();
+  if (!conn.address) {
+    throw Object.assign(new Error('尚未配置设备连接地址（设置 → 连接设置）'), { statusCode: 409 });
+  }
+  const dir = runtime._internal.runtimeRoot();
+  if (!dir) throw Object.assign(new Error('MAA 运行包未就绪（请先在首页检查更新里下载）'), { statusCode: 409 });
+  const f = maaCore.funcs();
+
+  state = {
+    phase: 'connecting',
+    detail: opts.detail || '准备执行',
+    tasks: jobs.map((j) => j.label || j.taskType),
+    startedAt: Date.now(),
+    finishedAt: null,
+  };
+  seq += 1;
+
+  const s = await ensureSession(f, dir, conn, conn.adbPath || '/usr/bin/adb');
+  const handle = s.handle;
+
+  if (opts.postAction && opts.postAction !== 'None') {
+    const post = { client_type: conn.clientType || 'Official' };
+    if (['Sleep', 'Hibernate', 'Shutdown'].includes(opts.postAction)) post.shutdown = opts.postAction;
+    if (opts.postAction === 'ExitGame') post.exit_game = true;
+    if (opts.postAction === 'ExitEmulator') post.exit_emulator = true;
+    jobs = jobs.slice();
+    jobs.push({ taskType: 'CloseDown', params: post, label: '完成后动作' });
+  }
+
+  appendJobs(f, handle, jobs);
+  if (!f.start(handle)) throw new Error('AsstStart 失败');
+  state.phase = 'running';
+  state.detail = opts.detail || `执行中（${jobs.length} 项）`;
+  logger.info('runner', `开始执行: ${state.tasks.join(', ')}`);
+  return snapshot();
+}
+
 async function start(selectedTaskIds) {
   if (busy()) throw Object.assign(new Error('已有任务在执行中'), { statusCode: 409 });
 
@@ -365,13 +435,7 @@ async function start(selectedTaskIds) {
   const s2 = await ensureSession(f, dir, conn, adbPath);
   const handle = s2.handle;
 
-  const taskIds = [];
-  for (const j of jobs) {
-    const id = f.appendTask(handle, j.task.taskType, JSON.stringify(j.params));
-    if (!id || id < 0) throw new Error(`追加任务失败: ${j.task.name}`);
-    taskIds.push(id);
-    logger.info('runner', `追加任务 ${j.task.name} (#${id}) params=${JSON.stringify(j.params)}`);
-  }
+  const taskIds = appendJobs(f, handle, jobs);
 
   // 任务完成后的动作 —— MaaCore 的 CloseDown 任务。
   // 只有 shutdown 取值有协议文档（None/Sleep/Hibernate/Shutdown）；
@@ -564,4 +628,4 @@ async function runConnectTest() {
   }
 }
 
-module.exports = { snapshot, start, stop, testConnect, connectTestState: () => ({ ...connectTest }), busy, buildParams, _resetForTest: () => { state = { phase: 'idle', detail: '', tasks: [], startedAt: null, finishedAt: null }; } };
+module.exports = { snapshot, start, stop, testConnect, runTask, onMessage, connectTestState: () => ({ ...connectTest }), busy, buildParams, _resetForTest: () => { state = { phase: 'idle', detail: '', tasks: [], startedAt: null, finishedAt: null }; } };

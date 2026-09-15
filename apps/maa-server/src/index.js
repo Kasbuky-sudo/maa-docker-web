@@ -9,6 +9,8 @@ const config = require('./config');
 const { logger, LOG_DIR } = require('./logger');
 const runtime = require('./runtime');
 const runner = require('./runner');
+const tools = require('./tools');
+const scheduler = require('./scheduler');
 
 const PORT = Number(process.env.PORT || 3000);
 const PACKAGE_VERSION = require('../package.json').version;
@@ -179,6 +181,36 @@ const routes = {
 
   'GET /api/runner/status': () => runner.snapshot(),
 
+  /* ---- 小工具（识别类）：真实调用 MaaCore 的 Recruit / Depot / OperBox ---- */
+  'GET /api/tools/results': () => tools.snapshot(),
+
+  async 'POST /api/tools/run'(req) {
+    const body = await readJson(req);
+    if (!body || typeof body.kind !== 'string') {
+      throw Object.assign(new Error('body.kind is required'), { statusCode: 400 });
+    }
+    return tools.runRecognition(body.kind);
+  },
+
+  /* ---- 自动战斗：运行包自带的官方作业 ---- */
+  'GET /api/copilot/list': (req, url) => {
+    const list = tools.listCopilot({ force: url.searchParams.get('force') === '1' });
+    return {
+      count: list.length,
+      byType: {
+        main: list.filter((x) => x.type === 'main').length,
+        sss: list.filter((x) => x.type === 'sss').length,
+        paradox: list.filter((x) => x.type === 'paradox').length,
+      },
+      jobs: list,
+    };
+  },
+
+  async 'POST /api/copilot/start'(req) {
+    const body = await readJson(req);
+    return tools.runCopilot(body || {});
+  },
+
   'POST /api/runner/stop': () => runner.stop(),
 
   'POST /api/runner/test-connect': () => runner.testConnect(),
@@ -210,12 +242,14 @@ const routes = {
 
   // Scheduled executions (schedule.json)
   'GET /api/tasks/schedule': () => {
-    const file = path.join(config.CONFIG_DIR(), 'schedule.json');
-    try {
-      return { schedule: JSON.parse(require('node:fs').readFileSync(file, 'utf8')) };
-    } catch {
-      return { schedule: [] };
-    }
+    const state = scheduler.status();
+    return {
+      schedule: state.entries.map((e) => ({
+        id: e.id, time: e.time, enabled: e.enabled, tasks: e.tasks,
+        repeat: e.repeat, lastRun: e.lastRun, lastResult: e.lastResult, nextRun: e.nextRun,
+      })),
+      scheduler: { running: state.running, lastTickAt: state.lastTickAt },
+    };
   },
 
   async 'PUT /api/tasks/schedule'(req) {
@@ -232,6 +266,10 @@ const routes = {
         time: /^\d{2}:\d{2}$/.test(String(e.time)) ? String(e.time) : '04:00',
         enabled: e.enabled !== false,
         tasks: Array.isArray(e.tasks) ? e.tasks.filter((t) => validIds.has(t)) : [],
+        // 重复规则由服务端调度器使用（daily/weekdays/weekends/mon..sun）
+        repeat: scheduler.REPEATS.includes(e.repeat) ? e.repeat : 'daily',
+        lastRun: typeof e.lastRun === 'string' ? e.lastRun.slice(0, 40) : null,
+        lastResult: typeof e.lastResult === 'string' ? e.lastResult.slice(0, 120) : null,
       }))
       .slice(0, 64);
     const file = path.join(config.CONFIG_DIR(), 'schedule.json');
@@ -348,6 +386,7 @@ function start() {
   } else {
     logger.info('server', 'runtime not found; use POST /api/runtime/fetch to download it');
   }
+  scheduler.start();
   return new Promise((resolve) => server.listen(PORT, '0.0.0.0', () => resolve(PORT)));
 }
 
