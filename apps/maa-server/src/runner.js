@@ -41,8 +41,82 @@ let connectTest = {
   startedAt: null,
   finishedAt: null,
 };
-let session = null; // { handle, cbRef }
+let session = null; // { handle, cbRef, address }
 let seq = 0;
+let resourceKey = null;        // 已加载进 MaaCore 的 runtime（目录#版本），避免重复 loadResource
+let connectedNotifiedAt = 0;   // 最近一次 MaaCore 报 Connected 的时间
+
+// 运行包被下载/更新替换后：作废资源缓存并断开旧会话（否则会继续用旧资源）
+runtime.onRuntimeReplaced(() => {
+  resourceKey = null;
+  teardown(0);
+  logger.info('runner', '运行包已更新，MaaCore 资源缓存与会话已重置');
+});
+
+/** 资源只需加载一次（AsstLoadResource 是同步阻塞调用，重复调用会卡住整个事件循环） */
+function ensureResource(f, dir) {
+  const key = `${dir}#${(runtime.status() || {}).installed || 'unknown'}`;
+  if (resourceKey === key) return false;
+  state.phase = 'loading';
+  state.detail = '加载资源中';
+  f.setUserDir(dir);
+  if (!f.loadResource(dir)) throw new Error('AsstLoadResource 失败：运行包资源不完整？');
+  resourceKey = key;
+  logger.info('runner', `MaaCore 资源已加载（${key}）`);
+  return true;
+}
+
+/**
+ * 取得一个「已连接」的 MaaCore 会话：能用就复用，不能用才重建。
+ * 复用可以让「连接测试」的成功状态延续到「开始任务」，省掉重复的 60s 握手。
+ */
+async function ensureSession(f, dir, conn, adbPath, waitMs = 90000) {
+  if (session && session.address === conn.address) {
+    let ok = false;
+    try { ok = !!f.connected(session.handle); } catch { ok = false; }
+    if (ok) {
+      logger.info('runner', `复用已连接会话: ${conn.address}`);
+      return session;
+    }
+  }
+  if (session) teardown(0);
+
+  ensureResource(f, dir);
+  const cbRef = maaCore.registerCallback((msg, details, arg) => onCallback(msg, details, arg));
+  const handle = f.createEx(cbRef, null);
+  if (!handle) {
+    try { require('koffi').unregister(cbRef); } catch { /* ignore */ }
+    throw new Error('AsstCreateEx 失败：无法创建 MaaCore 实例');
+  }
+  session = { handle, cbRef, address: conn.address };
+  logger.info('runner', `MaaCore 实例已创建（MAA ${f.getVersion()}），开始连接 ${conn.address}`);
+
+  try {
+    if (conn.touchMode && f.setInstanceOption) {
+      const ok = f.setInstanceOption(handle, 2, String(conn.touchMode));
+      logger.info('runner', `触控模式设为 ${conn.touchMode}（${ok ? '成功' : '未接受'}）`);
+    }
+    if (conn.clientType && f.setInstanceOption) {
+      f.setInstanceOption(handle, 6, String(conn.clientType));
+    }
+  } catch (e) {
+    logger.warn('runner', `设置实例选项失败: ${e.message}`);
+  }
+
+  const startedAt = Date.now();
+  f.asyncConnect(handle, adbPath, conn.address, conn.config || 'General', 0);
+  for (let i = 0; i < Math.ceil(waitMs / 500); i++) {
+    await sleep(500);
+    if (session === null || session.handle !== handle) throw new Error('会话已重置');
+    if (state.phase === 'error') throw new Error(state.detail || '连接失败');
+    if (connectedNotifiedAt > startedAt || f.connected(handle)) {
+      logger.info('runner', `设备已连接: ${conn.address}（${Date.now() - startedAt} ms）`);
+      return session;
+    }
+  }
+  teardown(0);
+  throw new Error(`连接设备超时（${conn.address}），请检查 ADB 地址与网络`);
+}
 
 function snapshot() {
   const conn = readConnection();
@@ -92,6 +166,7 @@ function onCallback(msg, detailsJson) {
       case MSG_CONNECTION_INFO:
         logger.info('runner', `连接信息: ${d.what || ''} ${d.why || ''}`.trim());
         if (d.what) state.detail = String(d.what);
+        if (String(d.what).toLowerCase() === 'connected') connectedNotifiedAt = Date.now();
         break;
       case MSG_TASK_CHAIN_ERROR:
         state.phase = 'error';
@@ -281,45 +356,14 @@ async function start(selectedTaskIds) {
     return { task: t, params: buildParams(t.taskType, opts, { connection: conn }) };
   });
 
-  const cbRef = maaCore.registerCallback((msg, details, arg) => onCallback(msg, details, arg));
-
   state = { phase: 'loading', detail: '加载资源中', tasks: ids, startedAt: Date.now(), finishedAt: null };
   seq += 1;
 
-  f.setUserDir(dir);
-  if (!f.loadResource(dir)) {
-    throw new Error('AsstLoadResource 失败：运行包资源不完整？');
-  }
-  const handle = f.createEx(cbRef, null);
-  if (!handle) throw new Error('AsstCreateEx 失败：无法创建 MaaCore 实例');
-  session = { handle, cbRef };
-  logger.info('runner', `MaaCore 实例已创建（MAA ${f.getVersion()}），开始连接 ${conn.address}`);
-
-  // 实例级选项：触控模式(TouchMode=2) / 客户端类型(ClientType=6)
-  try {
-    if (conn.touchMode && f.setInstanceOption) {
-      const ok = f.setInstanceOption(handle, 2, String(conn.touchMode));
-      logger.info('runner', `触控模式设为 ${conn.touchMode}（${ok ? '成功' : '未接受'}）`);
-    }
-    if (conn.clientType && f.setInstanceOption) {
-      f.setInstanceOption(handle, 6, String(conn.clientType));
-    }
-  } catch (e) {
-    logger.warn('runner', `设置实例选项失败: ${e.message}`);
-  }
-
   state.phase = 'connecting';
   state.detail = '连接设备中';
-  f.asyncConnect(handle, adbPath, conn.address, conn.config || 'General', 0);
-  let connected = false;
-  for (let i = 0; i < 90; i++) {
-    await sleep(500);
-    if (session !== null && session.handle !== handle) throw new Error('会话已重置');
-    if (state.phase === 'error') throw new Error(state.detail || '连接失败');
-    if (f.connected(handle)) { connected = true; break; }
-  }
-  if (!connected) throw new Error(`连接设备超时（${conn.address}），请检查 ADB 地址与网络`);
-  logger.info('runner', `设备已连接: ${conn.address}`);
+  // 若刚做过连接测试，这里直接复用那个已连接的会话，不再重复握手
+  const s2 = await ensureSession(f, dir, conn, adbPath);
+  const handle = s2.handle;
 
   const taskIds = [];
   for (const j of jobs) {
@@ -354,7 +398,78 @@ async function start(selectedTaskIds) {
 }
 
 function stop() {
-  if (!session) return snapshot();
+  if (!session) {
+    // 没有会话可停：把连接测试的状态也清掉（用户点「断开」）
+    connectTest = { running: false, ok: null, detail: '', address: connectTest.address, ms: null, startedAt: null, finishedAt: null };
+    return snapshot();
+  }
+  try { maaCore.funcs().stop(session.handle); } catch { /* ignore */ }
+  state.phase = 'stopping';
+  state.detail = '停止中';
+  logger.info('runner', '收到停止指令');
+  return snapshot();
+}
+
+// Probe an ADB device without appending tasks: load resources, connect, disconnect.
+/* 立即返回（{started:true}），真正的连接在后台跑，结果看 status.connectTest */
+function testConnect() {
+  if (connectTest.running) return { started: true, alreadyRunning: true, address: connectTest.address };
+  connectTest = {
+    running: true, ok: null, detail: '连接测试中', address: '', ms: null,
+    startedAt: Date.now(), finishedAt: null,
+  };
+  runConnectTest().catch((e) => {
+    connectTest = {
+      ...connectTest, running: false, ok: false, detail: e.message,
+      finishedAt: Date.now(),
+    };
+  });
+  return { started: true, address: connectTest.address };
+}
+
+async function runConnectTest() {
+  if (busy()) throw Object.assign(new Error('任务执行中，无法测试连接'), { statusCode: 409 });
+  const conn = readConnection();
+  connectTest.address = conn.address || '';
+  if (!conn.address) throw Object.assign(new Error('尚未填写设备地址'), { statusCode: 400 });
+  const dir = runtime._internal.runtimeRoot();
+  if (!dir) throw Object.assign(new Error('MAA 运行包未就绪'), { statusCode: 409 });
+  const f = maaCore.funcs();
+  const started = Date.now();
+  const iv = setInterval(() => {
+    if (connectTest.running) {
+      connectTest.detail = `连接测试中（${Math.round((Date.now() - started) / 1000)}s）`;
+    }
+  }, 1000);
+  try {
+    // 复用会话：连接测试成功后会话会保留，随后「开始任务」可直接复用
+    await ensureSession(f, dir, conn, conn.adbPath || '/usr/bin/adb');
+    const ms = Date.now() - started;
+    logger.info('runner', `连接测试成功: ${conn.address} (${ms} ms)`);
+    connectTest = {
+      running: false, ok: true, detail: `连接成功（${ms} ms）· 会话已保持`,
+      address: conn.address, ms, startedAt: connectTest.startedAt, finishedAt: Date.now(),
+    };
+    return { ok: true, address: conn.address, ms, maaVersion: f.getVersion() };
+  } catch (e) {
+    logger.warn('runner', `连接测试失败: ${e.message}`);
+    connectTest = {
+      running: false, ok: false, detail: e.message,
+      address: conn.address, ms: Date.now() - started,
+      startedAt: connectTest.startedAt, finishedAt: Date.now(),
+    };
+    return { ok: false, address: conn.address, error: e.message };
+  } finally {
+    clearInterval(iv);
+  }
+}
+
+function stop() {
+  if (!session) {
+    // 没有会话可停：把连接测试的状态也清掉（用户点「断开」）
+    connectTest = { running: false, ok: null, detail: '', address: connectTest.address, ms: null, startedAt: null, finishedAt: null };
+    return snapshot();
+  }
   try { maaCore.funcs().stop(session.handle); } catch { /* ignore */ }
   state.phase = 'stopping';
   state.detail = '停止中';

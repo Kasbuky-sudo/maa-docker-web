@@ -14,8 +14,12 @@ const { logger } = require('./logger');
  * Upstream project: https://github.com/MaaAssistantArknights/MaaAssistantArknights (AGPL-3.0)
  */
 
+/* 引导版本：首次下载用的兜底版本（真正的「已安装版本」以 marker 为准，
+ * 更新则通过 GitHub releases API 对比 + 用官方 assets[].digest 校验，无需硬编码哈希）。 */
 const MAA_VERSION = 'v6.17.5';
 const RELEASE_BASE = `https://github.com/MaaAssistantArknights/MaaAssistantArknights/releases/download/${MAA_VERSION}`;
+const RELEASES_API = 'https://api.github.com/repos/MaaAssistantArknights/MaaAssistantArknights/releases/latest';
+const UPDATE_CACHE_MS = 5 * 60 * 1000;
 
 const ASSETS = Object.freeze({
   x64: Object.freeze({
@@ -43,6 +47,10 @@ const state = {
   error: null,
   fetchedAt: null,
   busy: false,
+  installed: null,        // 磁盘上实际安装的版本（marker.maaVersion）
+  latest: null,           // GitHub 上的最新版本（checkUpdate 后填充）
+  latestPublishedAt: null,
+  updateCheckedAt: null,
 };
 
 function assetFor(arch) {
@@ -95,11 +103,16 @@ function init() {
   fs.mkdirSync(RUNTIME_DIR(), { recursive: true });
   fs.mkdirSync(RESOURCE_DIR(), { recursive: true });
   const marker = readMarker();
-  if (marker && marker.maaVersion === MAA_VERSION && marker.sha256 === assetFor(state.arch).sha256 && runtimeRoot()) {
+  // 只要 marker 记录了版本、归档名与架构对得上，且 runtime 根目录存在，就算就绪。
+  // （不再要求等于引导版本——否则升级到新版本后会被判定为未就绪。）
+  if (marker && marker.maaVersion && marker.asset && marker.arch === state.arch && runtimeRoot()) {
     state.fetchedAt = marker.fetchedAt || null;
+    state.installed = marker.maaVersion;
+    state.maaVersion = marker.maaVersion;
     setStatus('ready');
     return true;
   }
+  state.installed = null;
   setStatus('uninitialized');
   return false;
 }
@@ -126,10 +139,39 @@ function extractTar(file) {
  * Download, verify and extract the official MAA runtime for this architecture.
  * progressCB(downloadedBytes, totalBytes) is invoked while streaming.
  */
-async function fetchRuntime(progressCb = () => {}) {
+async function fetchRuntime(progressCb = () => {}, targetVersion = null) {
   if (state.busy) throw new Error('runtime fetch already in progress');
   state.busy = true;
-  const asset = assetFor(state.arch);
+
+  // 解析目标版本：显式指定 > 最新 release > 引导版本（内置 sha256）
+  let asset;
+  let version = targetVersion;
+  const info = await checkUpdate({ force: !!targetVersion });
+  if (!version && info.latest && info.asset) {
+    version = info.latest;
+    asset = {
+      file: info.asset.name,
+      url: info.asset.url,
+      sha256: info.asset.digest ? String(info.asset.digest).replace(/^sha256:/, '') : null,
+    };
+  } else if (version && info.latest === version && info.asset) {
+    asset = {
+      file: info.asset.name,
+      url: info.asset.url,
+      sha256: info.asset.digest ? String(info.asset.digest).replace(/^sha256:/, '') : null,
+    };
+  } else if (version && version === MAA_VERSION) {
+    asset = assetFor(state.arch);
+  } else {
+    // 未知版本：按约定拼 URL，无 sha256（仅记录，提示未校验）
+    const suffix = archSuffix(state.arch);
+    asset = {
+      file: `MAA-${version || MAA_VERSION}-${suffix}.tar.gz`,
+      url: `https://github.com/MaaAssistantArknights/MaaAssistantArknights/releases/download/${version || MAA_VERSION}/MAA-${version || MAA_VERSION}-${suffix}.tar.gz`,
+      sha256: null,
+    };
+  }
+  logger.info('runtime', `准备下载 ${asset.file}${asset.sha256 ? '（将校验 sha256）' : '（无官方摘要，跳过校验）'}`);
   state.asset = asset.file;
   const tmpFile = path.join(RUNTIME_DIR(), asset.file);
   try {
@@ -166,26 +208,35 @@ async function fetchRuntime(progressCb = () => {}) {
 
     setStatus('verifying');
     const digest = await sha256File(tmpFile);
-    if (digest !== asset.sha256) {
-      fs.rmSync(tmpFile, { force: true });
-      throw new Error(`sha256 mismatch: expected ${asset.sha256}, got ${digest}`);
+    if (asset.sha256) {
+      if (digest !== asset.sha256) {
+        fs.rmSync(tmpFile, { force: true });
+        throw new Error(`sha256 mismatch: expected ${asset.sha256}, got ${digest}`);
+      }
+      logger.info('runtime', 'sha256 verified');
+    } else {
+      logger.warn('runtime', `跳过 sha256 校验（官方未提供摘要），实际摘要 ${digest}`);
     }
-    logger.info('runtime', 'sha256 verified');
 
     setStatus('extracting');
     await extractTar(tmpFile);
     fs.rmSync(tmpFile, { force: true });
 
+    const installedVersion = version || MAA_VERSION;
     writeMarker({
-      maaVersion: MAA_VERSION,
-      sha256: asset.sha256,
+      maaVersion: installedVersion,
+      sha256: asset.sha256 || digest,
       asset: asset.file,
       arch: state.arch,
       fetchedAt: new Date().toISOString(),
     });
     state.fetchedAt = new Date().toISOString();
+    state.installed = installedVersion;
+    state.maaVersion = installedVersion;
     setStatus('ready');
-    logger.info('runtime', `MAA ${MAA_VERSION} runtime ready at ${runtimeRoot()}`);
+    logger.info('runtime', `MAA ${installedVersion} runtime ready at ${runtimeRoot()}`);
+    // 运行包被替换：通知 runner 清掉已加载的 MaaCore 资源缓存
+    try { if (onReplacedFn) onReplacedFn(installedVersion); } catch { /* ignore */ }
     return true;
   } catch (err) {
     setStatus('error', err.message);
@@ -193,6 +244,66 @@ async function fetchRuntime(progressCb = () => {}) {
     throw err;
   } finally {
     state.busy = false;
+  }
+}
+
+/** 运行时被替换后的回调（runner 用它清掉 MaaCore 资源缓存） */
+let onReplacedFn = null;
+function onRuntimeReplaced(fn) {
+  onReplacedFn = fn;
+}
+
+function archSuffix(arch) {
+  return arch === 'arm64' ? 'linux-aarch64' : 'linux-x86_64';
+}
+
+/**
+ * 查询 GitHub 最新 release 并与本地已安装版本对比。
+ * 返回 { installed, latest, updateAvailable, asset, publishedAt, releaseName, error }。
+ */
+async function checkUpdate({ force = false } = {}) {
+  if (!force && state.updateCheckedAt && Date.now() - state.updateCheckedAt < UPDATE_CACHE_MS) {
+    return {
+      installed: state.installed,
+      latest: state.latest,
+      updateAvailable: !!state.latest && state.latest !== state.installed,
+      cached: true,
+    };
+  }
+  const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy
+    || process.env.HTTP_PROXY || process.env.http_proxy || '';
+  const opts = { redirect: 'follow', headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'maa-docker-web' } };
+  if (proxyUrl) {
+    const { ProxyAgent } = require('undici');
+    opts.dispatcher = new ProxyAgent(proxyUrl);
+  }
+  try {
+    const res = await fetch(RELEASES_API, opts);
+    if (!res.ok) throw new Error(`releases API HTTP ${res.status}`);
+    const rel = await res.json();
+    const latest = rel.tag_name || rel.name || null;
+    const want = `MAA-${latest}-${archSuffix(state.arch)}.tar.gz`;
+    const asset = (rel.assets || []).find((a) => a.name === want) || null;
+    state.latest = latest;
+    state.latestPublishedAt = rel.published_at || null;
+    state.updateCheckedAt = Date.now();
+    return {
+      installed: state.installed || null,
+      pinned: MAA_VERSION,
+      latest,
+      updateAvailable: !!latest && latest !== state.installed,
+      releaseName: rel.name || '',
+      publishedAt: rel.published_at || null,
+      asset: asset ? {
+        name: asset.name,
+        size: asset.size,
+        digest: asset.digest || null,
+        url: asset.browser_download_url,
+      } : null,
+    };
+  } catch (err) {
+    logger.warn('runtime', `检查更新失败: ${err.message}`);
+    return { installed: state.installed || null, latest: null, updateAvailable: false, error: err.message };
   }
 }
 
@@ -245,6 +356,8 @@ function verify() {
 
 function status() {
   return {
+    installed: state.installed,
+    latest: state.latest,
     status: state.status,
     maaVersion: state.maaVersion,
     arch: state.arch,
@@ -258,6 +371,8 @@ function status() {
 
 module.exports = {
   MAA_VERSION,
+  checkUpdate,
+  onRuntimeReplaced,
   ASSETS,
   init,
   fetchRuntime,

@@ -76,6 +76,9 @@ var DEVICE = {
 Object.defineProperty(window, 'RUNNING', { get: isRunning });
 
 var LAST_VERSION = null;
+var SERVICE_VER = '—';
+var MAA_VER = '—';
+var RUNTIME_INFO = { installed: null, latest: null, status: null };
 
 /* 版本号 → 顶栏 / 关于页 / 首页卡片（数据来自 /api/version 与 /api/system/info） */
 function setServiceVersion(v) {
@@ -83,8 +86,14 @@ function setServiceVersion(v) {
   var info = LAST_VERSION || {};
   var sver = info.serviceVersion || '—';
   var mver = info.maaVersion || RT.maaVersion || '—';
+  SERVICE_VER = sver;
+  MAA_VER = mver;
   var el = document.querySelector('.mdw-titlebar-ver');
   if (el) el.textContent = 'v' + sver + ' · MAA ' + mver;
+  var ab = document.querySelector('.mdw-about-version');
+  if (ab) ab.textContent = 'v' + sver;
+  var abbrev = document.querySelector('.mdw-about-maalabel');
+  if (abbrev) abbrev.textContent = mver;
   var about = document.getElementById('about-version');
   if (about) about.textContent = 'v' + sver;
   var card = document.getElementById('home-service-version');
@@ -1147,6 +1156,106 @@ function pageHome(el) {
   loadHomeData();
 }
 
+/* ===== 运行包更新：先对比版本，再由用户决定是否下载 ===== */
+function fmtSize(n) {
+  if (!n) return '';
+  var mb = n / (1024 * 1024);
+  return mb >= 1024 ? (mb / 1024).toFixed(2) + ' GB' : mb.toFixed(1) + ' MB';
+}
+
+function openRuntimeUpdateModal(btn) {
+  if (BACKEND.online === false) { openInfoModal('无法操作', '后端未连接（离线预览）。'); return; }
+  if (btn) { btn.disabled = true; btn.textContent = '检查中…'; }
+  GET('/api/runtime/check-update').then(function (r) {
+    var installed = r.installed || '未安装';
+    var latest = r.latest || '未知';
+    var body =
+      '<div class="mdw-kv"><span>当前已安装</span><b>' + esc(installed) + '</b></div>' +
+      '<div class="mdw-kv"><span>官方最新</span><b>' + esc(latest) + '</b></div>' +
+      (r.publishedAt ? '<div class="mdw-kv"><span>发布时间</span><b>' + esc(String(r.publishedAt).slice(0, 10)) + '</b></div>' : '') +
+      (r.asset ? '<div class="mdw-kv"><span>下载体积</span><b>' + esc(fmtSize(r.asset.size)) + '</b></div>' : '') +
+      '<div class="mdw-kv"><span>结果</span><b>' +
+        (r.error ? '检查失败：' + esc(r.error)
+          : (r.updateAvailable ? '可更新到 ' + esc(latest) : '已是最新版本')) + '</b></div>' +
+      (r.asset && r.asset.digest ? '<div class="mdw-muted" style="margin-top:8px;font-size:12px">将用官方 sha256 摘要校验下载文件</div>' : '');
+    var buttons = [{ label: '关闭' }];
+    if (r.updateAvailable) {
+      buttons.push({ label: '下载并更新到 ' + latest, primary: true, onClick: function () {
+        POST('/api/runtime/fetch', { version: latest }).then(function () {
+          pollRuntimeDownload(latest);
+        }).catch(function (e) { openInfoModal('下载失败', e.message); });
+      } });
+    } else {
+      buttons.push({ label: '强制重新检查', onClick: function () {
+        GET('/api/runtime/check-update?force=1').then(function (r2) {
+          openInfoModal('检查更新', r2.updateAvailable
+            ? '可更新到 ' + (r2.latest || '')
+            : '已是最新版本' + (r2.installed ? '（' + r2.installed + '）' : '') +
+              (r2.error ? ' · ' + r2.error : ''));
+        });
+        return false;
+      } });
+    }
+    openModal({ title: '检查更新（MAA 运行包）', body: body, buttons: buttons });
+  }).catch(function (e) {
+    openInfoModal('检查更新失败', e.message);
+  }).then(function () {
+    if (btn) { btn.disabled = false; btn.textContent = '检查更新'; }
+  });
+}
+
+function pollRuntimeDownload(version) {
+  var msg = document.getElementById('rt-progress');
+  if (!msg) {
+    openModal({
+      title: '正在更新运行包',
+      body: '<div id="rt-progress" class="mdw-modal-text">准备下载 ' + esc(version) + '…</div>',
+      buttons: [{ label: '后台进行（可关闭）' }],
+    });
+  }
+  function tick() {
+    GET('/api/runtime/status').then(function (st) {
+      var el2 = document.getElementById('rt-progress');
+      var line = '状态：' + esc(st.status || '?') + (st.error ? '　错误：' + esc(st.error) : '');
+      if (el2) el2.textContent = line;
+      if (st.status === 'ready' && !st.busy) {
+        openInfoModal('更新完成', '已安装 ' + (st.installed || version));
+        refreshRunnerStatus();
+        loadHomeData();
+        return;
+      }
+      if (st.status === 'error') { openInfoModal('更新失败', st.error || '未知错误'); return; }
+      if (st.busy) setTimeout(tick, 1500);
+    }).catch(function () { setTimeout(tick, 2500); });
+  }
+  setTimeout(tick, 800);
+}
+
+/* ===== 资源校验：渲染成勾选清单，而不是甩原始 JSON ===== */
+function openResourceVerifyModal(btn) {
+  if (btn) btn.disabled = true;
+  POST('/api/resources/verify').then(function (r) {
+    if (r && r.error && !(r.checks || []).length) {
+      openInfoModal('资源校验', '运行包尚未就绪：' + r.error + '\n\n请先在首页「检查更新」里下载运行包。');
+      return;
+    }
+    var rows = (r && r.checks || []).map(function (c) {
+      var icon = c.ok ? '<span class="mdw-ok">✓</span>' : '<span class="mdw-bad">✗</span>';
+      var detail = c.path || '';
+      if (c.found) detail = (c.found || []).join(', ');
+      else if (c.count != null) detail = c.count + ' 项';
+      return '<div class="mdw-kv"><span>' + icon + ' ' + esc(c.name) + '</span><b>' + esc(detail) + '</b></div>';
+    }).join('');
+    openModal({
+      title: '资源校验' + (r && r.ok ? '：通过' : '：有问题'),
+      body: rows || '<div class="mdw-muted">没有返回检查项</div>',
+      buttons: [{ label: '好', primary: true }],
+    });
+  }).catch(function (e) {
+    openInfoModal('校验失败', e.message + '（若为 403/404，请确认反代与容器版本一致）');
+  }).then(function () { if (btn) btn.disabled = false; });
+}
+
 function fmtBytes(n) {
   if (!n || n < 0) return '—';
   var gb = n / (1024 * 1024 * 1024);
@@ -1197,22 +1306,9 @@ function loadHomeData() {
 function bindHomeActions(el) {
   function sync() { syncRuntimeUI(); }
   var rf = el.querySelector('#home-runtime-fetch');
-  if (rf) rf.addEventListener('click', function () {
-    if (BACKEND.online === false) { openInfoModal('无法操作', '后端未连接（离线预览）。'); return; }
-    rf.disabled = true;
-    POST('/api/runtime/fetch').then(function (r) {
-      openInfoModal('运行包下载', '已开始下载 MAA ' + ((r && r.maaVersion) || '') + '，进度见日志页。');
-    }).catch(function (e) { openInfoModal('下载失败', e.message); })
-      .then(function () { rf.disabled = false; });
-  });
+  if (rf) rf.addEventListener('click', function () { openRuntimeUpdateModal(rf); });
   var rv = el.querySelector('#home-res-verify');
-  if (rv) rv.addEventListener('click', function () {
-    rv.disabled = true;
-    POST('/api/resources/verify').then(function (r) {
-      openInfoModal('资源校验', JSON.stringify(r, null, 2).slice(0, 600));
-    }).catch(function (e) { openInfoModal('校验失败', e.message); })
-      .then(function () { rv.disabled = false; });
-  });
+  if (rv) rv.addEventListener('click', function () { openResourceVerifyModal(rv); });
   var rl = el.querySelector('#home-reload');
   if (rl) rl.addEventListener('click', function () { loadHomeData(); refreshRunnerStatus(); });
   var conn = el.querySelector('#home-connect');
@@ -2316,6 +2412,7 @@ function pageTools(el) {
     t.addEventListener('click', function () {
       toolsTab = t.dataset.tab;
       el.querySelectorAll('#tools-tabs .mdw-tools-tab').forEach(function (x) { x.classList.toggle('active', x === t); });
+      if (toolsTab === 'resource') loadRuntimeInfo();
       el.querySelector('#tools-body').innerHTML = renderToolsContent();
       bindToolsEvents(el);
     });
@@ -2624,29 +2721,40 @@ function MAA_STR(key, fallback) {
 
 /* ============ 资源更新 ============ */
 function toolsResourceContent() {
+  var rt = TOOL_STATE.runtime || {};
   var rows = [
-    ['客户端资源', '月行水上 #0914', '最新'],
-    ['MAA 资源包', 'v6.17.5-r1', '最新'],
-    ['作业站数据', '2026-09-16 08:00', '可更新'],
-    ['干员数据 (PRTS)', '2026-09-15', '最新'],
-    ['关卡数据 (企鹅物流)', '2026-09-14', '可更新']
+    ['服务端 (maa-server)', SERVICE_VER || '—', '运行中'],
+    ['MAA 运行包', rt.installed || '未安装', rt.status === 'ready' ? '已就绪' : (rt.status || '未就绪')],
+    ['运行包最新版', rt.latest || '未检查', rt.latest && rt.installed && rt.latest !== rt.installed ? '可更新' : '—'],
+    ['资源目录 (resource)', (rt.resourceCount != null ? rt.resourceCount + ' 项' : '未接入'), '—'],
+    ['作业站 / 干员数据', '未接入', '—']
   ];
-  var body = '<table class="app-table-view mdw-res-table"><thead><tr><th>资源</th><th>当前版本</th><th>状态</th><th></th></tr></thead><tbody>' +
+  var body = '<table class="app-table-view mdw-res-table"><thead><tr><th>项目</th><th>版本 / 状态</th><th>说明</th></tr></thead><tbody>' +
     rows.map(function (r) {
-      return '<tr><td>' + esc(r[0]) + '</td><td>' + esc(r[1]) + '</td>' +
-        '<td><span class="mdw-pill ' + (r[2] === '最新' ? 'ok' : '') + '">' + esc(r[2]) + '</span></td>' +
-        '<td><button type="button" class="app-btn" style="font-size:12px;padding:2px 10px"' + (r[2] === '最新' ? ' disabled' : '') + '>更新</button></td></tr>';
-    }).join('') + '</tbody></table>';
-  var cfg = '<label class="mdw-check"><input type="checkbox" class="app-checkbox" checked/><span>自动检查资源更新</span></label>' +
-    '<div class="mdw-cfg-line"><span>更新源</span>' + selectHtml([['github', 'GitHub'], ['mirror', '国内镜像'], ['custom', '自定义']], 'mirror', 'res-src') + '</div>';
+      return '<tr><td>' + esc(r[0]) + '</td><td>' + esc(r[1]) + '</td><td>' + esc(r[2]) + '</td></tr>';
+    }).join('') + '</tbody></table>' +
+    '<div class="mdw-muted" style="margin-top:10px;font-size:12px">版本号统一由服务端 package.json 提供（/api/version），页面不再各自硬编码。</div>';
+  var cfg = '<div class="mdw-cfg-line"><span>更新源</span>' +
+    selectHtml([['github', 'GitHub 官方 release'], ['mirror', '国内镜像（未实现）']], 'github', 'res-src') + '</div>' +
+    '<button type="button" class="app-btn" id="res-check-update">检查更新</button>';
   return '<div class="mdw-tool">' +
       '<div class="mdw-tool-head"><div class="mdw-tool-title">资源更新</div>' +
-      '<div class="mdw-tool-meta">上次检查：' + esc(TOOL_STATE.resource.last) + '</div></div>' +
+      '<div class="mdw-tool-meta">MAA 运行包与资源版本' + (rt.checkedAt ? ' · 上次检查 ' + esc(rt.checkedAt) : '') + '</div></div>' +
       '<div class="mdw-tool-body">' + body + '</div>' +
-      '<div class="mdw-tool-foot">' + cfg +
-        '<button type="button" class="app-btn mdw-btn-primary mdw-tool-start" id="tools-start">检查更新</button>' +
-      '</div>' +
+      '<div class="mdw-tool-foot">' + cfg + '</div>' +
     '</div>';
+}
+
+function loadRuntimeInfo() {
+  return GET('/api/runtime/status').then(function (st) {
+    RUNTIME_INFO = { installed: st.installed || null, latest: st.latest || null, status: st.status || null };
+    TOOL_STATE.runtime = Object.assign(TOOL_STATE.runtime || {}, {
+      installed: st.installed, latest: st.latest, status: st.status,
+      checkedAt: nowTime(),
+    });
+    if (st.installed && st.installed !== RT.maaVersion) RT.maaVersion = st.installed;
+    return st;
+  }).catch(function () { return null; });
 }
 
 function bindToolsEvents(el) {
@@ -2691,6 +2799,7 @@ function bindToolsEvents(el) {
     item.addEventListener('click', function () {
       if (item.dataset.kind === 'current') { cowtoolsSel.current = item.dataset.id; cowtoolsSel.permanent = ''; }
       else { cowtoolsSel.permanent = item.dataset.id; cowtoolsSel.current = ''; }
+      if (toolsTab === 'resource') loadRuntimeInfo();
       el.querySelector('#tools-body').innerHTML = renderToolsContent();
       bindToolsEvents(el);
     });
@@ -2701,6 +2810,9 @@ function bindToolsEvents(el) {
     if (log) log.insertAdjacentHTML('afterbegin',
       '<div class="mdw-cow-line"><span class="mdw-log-time">' + nowTime() + '</span> 已下发小游戏任务（原型：未接入 MaaCore）</div>');
   });
+
+  var resCheck = el.querySelector('#res-check-update');
+  if (resCheck) resCheck.addEventListener('click', function () { openRuntimeUpdateModal(resCheck); });
 
   // 导出按钮反馈
   ['#o-export-btn', '#d-export-btn'].forEach(function (sel) {
@@ -2806,6 +2918,19 @@ function bindSettingsEvents(el) {
     }, 1200);
   });
 
+  var upCheck = el.querySelector('#up-check');
+  if (upCheck) upCheck.addEventListener('click', function () { openRuntimeUpdateModal(upCheck); });
+  var upVerify = el.querySelector('#up-verify');
+  if (upVerify) upVerify.addEventListener('click', function () { openResourceVerifyModal(upVerify); });
+  if (el.querySelector('#up-installed')) {
+    loadRuntimeInfo().then(function (st) {
+      if (!st) return;
+      setText('up-installed', st.installed || '未安装');
+      setText('up-latest', st.latest || '未检查');
+      setText('up-service-ver', SERVICE_VER);
+    });
+  }
+
   var themeSel = el.querySelector('#s-theme');
   if (themeSel) themeSel.addEventListener('change', function () { applyTheme(this.value); });
   var navCol = el.querySelector('#s-navcollapse');
@@ -2899,10 +3024,14 @@ function renderSettingsBody() {
   if (settingsTab === 'update') {
     return '<div class="mdw-settings-group">' +
       '<div class="mdw-settings-group-head">更新设置</div>' +
-      settingsRow('自动下载 Runtime', '数据卷中没有运行包时自动下载', '<label class="app-switch"><input type="checkbox" class="app-checkbox" checked/><span class="app-switch-view"></span></label>') +
-      settingsRow('检查更新', '启动时检查 MAA 新版本', '<label class="app-switch"><input type="checkbox" class="app-checkbox" checked/><span class="app-switch-view"></span></label>') +
-      settingsRow('当前版本', 'MAA Runtime 版本', '<span class="mdw-muted">v6.17.5</span>') +
-      '<div class="mdw-settings-row"><div><div class="mdw-settings-label">手动更新</div><div class="mdw-settings-desc">从 MAA 官方 GitHub Release 下载</div></div><div class="mdw-settings-ctl"><button type="button" class="app-btn mdw-btn-primary">检查更新</button></div></div>' +
+      settingsRow('自动下载 Runtime', '数据卷中没有运行包时自动下载', '<label class="app-switch"><input type="checkbox" class="app-checkbox" id="up-auto-fetch" checked/><span class="app-switch-view"></span></label>') +
+      settingsRow('服务端版本', '来自服务端 package.json（唯一版本来源）', '<span class="mdw-muted" id="up-service-ver">' + esc(SERVICE_VER) + '</span>') +
+      settingsRow('已安装 MAA 运行包', '磁盘上实际的版本', '<span class="mdw-muted" id="up-installed">' + esc(RUNTIME_INFO.installed || '未知') + '</span>') +
+      settingsRow('官方最新版本', '点击「检查更新」后显示', '<span class="mdw-muted" id="up-latest">' + esc(RUNTIME_INFO.latest || '未检查') + '</span>') +
+      '<div class="mdw-settings-row"><div><div class="mdw-settings-label">检查 / 更新运行包</div>' +
+      '<div class="mdw-settings-desc">先与官方最新 release 对比，确认后才下载（下载后用官方 sha256 摘要校验）</div></div>' +
+      '<div class="mdw-settings-ctl"><button type="button" class="app-btn mdw-btn-primary" id="up-check">检查更新</button>' +
+      '<button type="button" class="app-btn" id="up-verify">资源校验</button></div></div>' +
     '</div>';
   }
   if (settingsTab === 'about') {
@@ -2912,13 +3041,13 @@ function renderSettingsBody() {
         '<div class="mdw-about-logo">M</div>' +
         '<div class="mdw-about-hero-text">' +
           '<div class="mdw-about-title">MAA for NAS</div>' +
-          '<div class="mdw-about-version">v0.5.0</div>' +
+          '<div class="mdw-about-version">v' + esc(SERVICE_VER) + '</div>' +
         '</div>' +
       '</div>' +
 
       '<div class="mdw-about-card">' +
         '<div class="mdw-about-card-title">项目信息</div>' +
-        '<div class="mdw-about-row"><span class="mdw-about-key">MAA 版本</span><span class="mdw-about-val">v6.17.5</span></div>' +
+        '<div class="mdw-about-row"><span class="mdw-about-key">MAA 版本</span><span class="mdw-about-val mdw-about-maalabel">' + esc(MAA_VER) + '</span></div>' +
         '<div class="mdw-about-row"><span class="mdw-about-key">前端组件</span><span class="mdw-about-val">windows-ui (MIT)</span></div>' +
         '<div class="mdw-about-row"><span class="mdw-about-key">上游项目</span><span class="mdw-about-val">MaaAssistantArknights (AGPL-3.0)</span></div>' +
         '<div class="mdw-about-row"><span class="mdw-about-key">开源许可</span><span class="mdw-about-val">本项目代码以 MIT 许可发布</span></div>' +
@@ -3036,6 +3165,7 @@ function boot() {
     // 顶栏版本号 & 离线提示
     setServiceVersion(LAST_VERSION);
     connectLogStream();
+    loadRuntimeInfo();
     return refreshRunnerStatus();
   }).catch(function (e) { console.warn('[boot]', e && e.message); });
 }

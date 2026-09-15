@@ -1057,3 +1057,11 @@ body {
   .app-navbar-overlay { z-index: 45; }
   .mdw-titlebar-l { flex: 1 1 auto; min-width: 0; }
 }
+
+/* ================= v1.10.0：检查更新 / 资源校验弹窗 ================= */
+.mdw-kv { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 6px 0; border-bottom: 1px dashed var(--mdw-border); font-size: 13.5px; }
+.mdw-kv:last-child { border-bottom: none; }
+.mdw-kv > span { color: var(--mdw-muted); }
+.mdw-kv > b { font-weight: 600; word-break: break-all; text-align: right; }
+.mdw-ok { color: var(--color-success-default); font-weight: 700; }
+.mdw-bad { color: var(--color-danger-default); font-weight: 700; }

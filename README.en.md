@@ -13,28 +13,46 @@ into a Web-managed service that runs in **x86_64 / arm64** Docker environments (
 This repository **does not redistribute** MAA binaries or resources: the server downloads the runtime
 from the official MAA GitHub release and verifies it with SHA-256 into a persistent volume.
 
+## Versions and updates
+
+| Version | Source | Notes |
+|---|---|---|
+| Server version | `apps/maa-server/package.json` | **Single source of truth**: the titlebar, settings and about page all read it from `GET /api/version`, so no page hardcodes a version any more |
+| MAA runtime version | the runtime on disk (marker inside `data/runtime`) | Independently upgradable: "Check for updates" compares against the latest official release and only downloads **after you confirm**, verifying the official `assets[].digest` SHA-256 |
+
+Upgrading the runtime does not require rebuilding the image: the server reads the marker on boot, and
+replacing the runtime invalidates the cached MaaCore resources and drops the old session.
+
 ## What works / what does not
 
-✅ **Implemented and verified**
+✅ **Implemented**
 
-- Multi-arch images and containerised deployment (`linux/amd64` + `linux/arm64`, published to ghcr by CI)
-- Official runtime download / SHA-256 verification / extraction / state machine
-- Live logs (WebSocket + ring buffer + file output)
-- Web UI built entirely on official [windows-ui](https://github.com/virtualvivek/windows-ui) components: one-click workbench (task queue / config panel / live panel / status bar) / Schedule / Settings / Runtime / Logs / Feature parity / About
-- Connection test (`AsstAsyncConnect` probe with latency) and post-action support (MaaCore `CloseDown`: sleep / hibernate / shutdown)
-- Task catalog (JSON-driven UI): Fight, Infrast, Award, Mall, Recruit, Roguelike, Reclamation
-- MaaCore C API FFI binding (koffi → `libMaaCore.so`): `AsstGetVersion` / `AsstSetUserDir` / `AsstLoadResource` / `AsstCreateEx` / native callback verified inside the container
+- Multi-arch images and container deployment (`linux/amd64` + `linux/arm64`, published to ghcr by CI)
+- Official MAA runtime download / SHA-256 verification / extraction / state machine /
+  **version comparison and upgrade against the official release**
+- The web UI has been **rewritten** on official windows-ui components (official dist only) and is wired to the API:
+  home, task queue (12 tasks with per-task settings), copilot, schedule, toolbox, logs, settings
+- Backend wiring: runner status polling (2.5s), task config persistence, queue start/stop,
+  logs (HTTP + live WebSocket), connection settings, system info, runtime and resource verification
+- Connect test: `AsstAsyncConnect`; **verified against a real device (Meizu 16X, wireless ADB)**.
+  The endpoint returns immediately and reports progress through status polling (gateway timeouts are gone),
+  and a successful test **keeps the session** so "start" can reuse it
+- MaaCore message ids verified one by one against the binding shipped with the runtime, and MaaCore's own
+  messages are surfaced to the UI instead of a bare "timeout"
+- Mobile layout: single-column stacking below 760px, drawer navigation (official `collapsed-float`),
+  no horizontal overflow on any page
 
-❌ **Not usable yet (important)**
+❌ **Not available yet**
 
-- **No task has ever run end-to-end on a real device** — the code path exists, but no integration test was done
-- Connection settings cover address / ADB path / connection profile; missing touch mode and MuMu/LD screencap enhancement
-- 5 of the 12 desktop tasks are missing: StartUp, Custom, SwitchTheme, DepotMaintain, UserDataUpdate
-- Copilot and Toolbox pages are entirely missing
-- Scheduling only stores entries; there is no server-side scheduler. Queue-level actions (post-action, timeout reminders) are missing
-- **No authentication at all**: run it on a trusted LAN only, never expose it to the internet
+- **No end-to-end task run on a real device yet**: the connection is verified, the download → execute → finish loop is not
+- The recognition tools (recruitment / operator / depot) have no backend API: the UI mirrors the desktop
+  layout using data from the official JSON, but the results are simulated locally and the page says so
+- Copilot: no backend API; the page is a faithful mock and can parse job files locally
+- Settings other than the connection group are not persisted (the `config.json` whitelist has 4 fields)
+- Schedules are stored but there is **no server-side scheduler**
+- **No authentication at all**: run it on a trusted LAN only
 
-## Feature parity (vs MAA v6.17.5 desktop)
+## Feature parity (vs the MAA desktop app; current baseline v6.17.5, the runtime itself upgrades in-app)
 
 Generated from [`apps/maa-server/src/feature-parity.json`](apps/maa-server/src/feature-parity.json) — the same data that drives the "Feature parity" page in the Web UI. After editing the data run `python3 scripts/gen-readme-parity.py` (CI fails if this table is stale).
 

@@ -102,17 +102,24 @@ const routes = {
 
   'GET /api/runtime/status': () => runtime.status(),
 
-  async 'POST /api/runtime/fetch'() {
+  // 与 GitHub 最新 release 对比（带 5 分钟缓存），前端据此决定是否提示更新
+  'GET /api/runtime/check-update': (req, url) =>
+    runtime.checkUpdate({ force: url.searchParams.get('force') === '1' }),
+
+  async 'POST /api/runtime/fetch'(req) {
     if (runtime.status().busy) {
       throw Object.assign(new Error('runtime fetch already in progress'), { statusCode: 409 });
     }
+    let body = {};
+    try { body = await readJson(req) || {}; } catch { body = {}; }
+    const version = typeof body.version === 'string' && /^v?[\w.\-]+$/.test(body.version) ? body.version : null;
     // Fire and forget; progress is observable via /api/runtime/status and logs.
     runtime.fetchRuntime((received, total) => {
       if (total && received % (20 * 1024 * 1024) < 512 * 1024) {
         logger.info('runtime', `download progress ${Math.floor((received / total) * 100)}%`);
       }
-    }).catch(() => {}); // status/log already record the failure
-    return { started: true, maaVersion: runtime.MAA_VERSION };
+    }, version).catch(() => {}); // status/log already record the failure
+    return { started: true, version: version || 'latest', installed: runtime.status().installed };
   },
 
   'GET /api/resources/info': () => runtime.resourcesInfo(),
