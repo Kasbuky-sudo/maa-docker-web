@@ -1,6 +1,7 @@
 node_modules/
 data/
 .dev-data/
+.workbuddy-data/
 .smoke-data/
 *.log
 .DS_Store
