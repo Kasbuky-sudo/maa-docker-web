@@ -31,14 +31,14 @@ function load() {
 
 // koffi.register needs the proto *object*, not its name
 function callbackProto() {
-  const koffi = load();
+  const koffi = require('koffi');
   if (!cbProto) cbProto = koffi.proto('AsstApiCallback', 'void', ['int32_t', 'const char *', 'void *']);
   return cbProto;
 }
 
 // koffi 2.x register(fn, '<Proto> *' | pointer(proto)); wrap both attempts here
 function registerCallback(fn) {
-  const koffi = load();
+  const koffi = require('koffi');
   callbackProto();
   try {
     return koffi.register(fn, 'AsstApiCallback *');
@@ -49,9 +49,8 @@ function registerCallback(fn) {
 
 function funcs() {
   if (fns) return fns;
-  const koffi = load();
   callbackProto(); // register named proto before the signature referencing it
-  const L = lib;
+  const L = lib || load();
   fns = {
     getVersion: L.func('const char *AsstGetVersion()'),
     setUserDir: L.func('uint8_t AsstSetUserDir(const char *path)'),
