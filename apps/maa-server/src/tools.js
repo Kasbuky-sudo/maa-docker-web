@@ -164,10 +164,17 @@ async function runRecognition(kind) {
 let copilotCache = { at: 0, list: [] };
 const COPILOT_CACHE_MS = 60 * 1000;
 
+/**
+ * 作业类型判定。
+ * 依据运行包里的实际命名（实测 resource/copilot 下 76 个作业：75 个文件名以
+ * `SSS_` 开头，其余是普通关卡），而不是靠目录名——`old/` 里同样混着普通关卡。
+ * 悖论模拟的作业前缀为 `Paradox_`（保留判断，当前运行包里没有）。
+ */
 function classify(filePath, title) {
-  const p = filePath.toLowerCase();
-  if (p.includes('paradox') || (title || '').includes('悖论')) return 'paradox';
-  if (p.includes('old/') || p.includes('/sss') || (title || '').includes('保全派驻')) return 'sss';
+  const base = path.basename(filePath).toLowerCase();
+  const t = title || '';
+  if (base.startsWith('sss_') || base.startsWith('sss') || t.includes('保全派驻')) return 'sss';
+  if (base.startsWith('paradox') || base.startsWith('pd_') || t.includes('悖论')) return 'paradox';
   return 'main';
 }
 
