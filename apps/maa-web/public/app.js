@@ -2223,7 +2223,7 @@ function bindCopilotEvents(el) {
   });
 }
 
-/* ===== Page: Tools ===== */
+/* ===== Page: Tools（小工具，对齐 MaaWpfGui ToolboxView） ===== */
 var toolsTab = 'recruit';
 var TOOLS_TABS = [
   ['recruit', '公招识别'], ['operator', '干员识别'], ['depot', '仓库识别'],
@@ -2231,27 +2231,15 @@ var TOOLS_TABS = [
   ['resource', '资源更新']
 ];
 
-/* 各工具的状态（原型 mock：正式版由 /api/tools/* 与 MaaCore 回调填充） */
+/* 各工具状态（原型 mock，正式版由 /api/tools/* 与 MaaCore 回调填充） */
 var TOOL_STATE = {
-  recruit: { running: false, last: '2026/9/15 20:13:50' },
-  operator: { running: false, last: '2026/9/15 20:18:23', filter: 'all', keyword: '', ownedFilter: 'all' },
-  depot: { running: false, last: '2026/9/15 20:19:30', cat: 'all', keyword: '' },
-  resource: { last: '2026/9/15 20:20:00' }
+  recruit: { last: '2026/9/16 00:18:13', detected: ['近卫干员', '狙击干员', '重装干员', '快速复活', '召唤'] },
+  operator: { last: '2026/9/16 00:18:13' },
+  depot: { last: '2026/9/16 00:19:24' },
+  resource: { last: '2026/9/16 00:20:00' },
+  monitor: { playing: false },
+  gacha: { started: false }
 };
-
-function toolShell(title, meta, body, cfg, btnLabel) {
-  return '<div class="mdw-tool">' +
-      '<div class="mdw-tool-head">' +
-        '<div class="mdw-tool-title">' + esc(title) + '</div>' +
-        '<div class="mdw-tool-meta">' + meta + '</div>' +
-      '</div>' +
-      '<div class="mdw-tool-body">' + body + '</div>' +
-      '<div class="mdw-tool-foot">' +
-        '<div class="mdw-tool-cfg">' + cfg + '</div>' +
-        '<button type="button" class="app-btn mdw-btn-primary mdw-tool-start" id="tools-start">' + esc(btnLabel || '开始识别') + '</button>' +
-      '</div>' +
-    '</div>';
-}
 
 function pageTools(el) {
   el.innerHTML =
@@ -2284,250 +2272,302 @@ function renderToolsContent() {
   return toolsCowtoolsContent();
 }
 
-/* --- 公招识别 --- */
-var RECRUIT_RESULT = {
-  tags: [['近卫干员', 3], ['狙击干员', 3], ['重装干员', 3], ['快速复活', 4], ['召唤', 4]],
-  groups: [
-    { star: 4, tag: '快速复活', ops: [['乌有', 3], ['卡夫卡', 3], ['红', 5], ['槐琥', 'MAX'], ['孑', 'MAX'], ['砾', 'MAX']] },
-    { star: 4, tag: '召唤', ops: [['梅尔', 'MAX'], ['豆苗', 'MAX']] },
-    { star: 3, tag: '狙击干员', ops: [['四月', ''], ['奥斯塔', ''], ['守林人', ''], ['安哲拉', ''], ['慑砂', ''], ['普罗旺斯', ''], ['灰喉', ''], ['熔泉', ''], ['白金', ''], ['蓝毒', ''], ['送葬人', ''], ['陨星', ''], ['安比尔', ''], ['杰西卡', ''], ['松果', ''], ['梅', ''], ['流星', ''], ['克洛丝', '']] },
-    { star: 3, tag: '重装干员', ops: [['临光', ''], ['可颂', ''], ['吽', ''], ['火神', ''], ['石棉', ''], ['雷蛇', ''], ['古米', ''], ['泡泡', ''], ['蛇屠箱', ''], ['角峰', ''], ['斑点', ''], ['米格鲁', '']] },
-    { star: 3, tag: '近卫干员', ops: [['因陀罗', ''], ['布洛卡', ''], ['幽灵鲨', ''], ['断崖', ''], ['星极', ''], ['燧石', ''], ['羽毛笔', ''], ['诗怀雅', ''], ['赤冬', ''], ['刻刀', ''], ['宴', ''], ['慕斯', '']] }
-  ]
-};
+/* ============ 公招识别 ============ */
+/* 官方公招库：resource/recruitment.json（MAA_RECRUIT） */
+function recruitOpsForTag(tag) {
+  return MAA_RECRUIT.ops.filter(function (o) { return (o.t || []).indexOf(tag) >= 0; });
+}
+/* MAA 的分组星级是「该标签的保底星级」= 匹配干员里的最低星级 */
+function recruitGuaranteedRarity(tag) {
+  /* 1★ 支援机械需要「支援机械」标签、2★ 需要「新手」标签，
+   * 都不能代表该标签的保底星级（MAA 里它们单列为 NEW），故按 r>=3 计算 */
+  var ops = recruitOpsForTag(tag).filter(function (o) { return o.r >= 3; });
+  if (!ops.length) return 1;
+  return ops.reduce(function (m, o) { return Math.min(m, o.r); }, 6);
+}
+/* 潜能 / NEW 标记：原型用名字做确定性散列，正式版取自识别结果 */
+function mockPotential(name) {
+  var h = 0;
+  for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 997;
+  return 1 + (h % 6);
+}
+var NEW_OPS = ['正义骑士号', 'Friston-3', 'Castle-3'];
 
 function toolsRecruitContent() {
   var st = TOOL_STATE.recruit;
-  var maxStar = Math.max.apply(null, RECRUIT_RESULT.groups.map(function (g) { return g.star; }));
+  var groups = st.detected.map(function (tag) {
+    var ops = recruitOpsForTag(tag).slice().sort(function (a, b) { return b.r - a.r; });
+    return { tag: tag, star: recruitGuaranteedRarity(tag), ops: ops };
+  }).sort(function (a, b) { return b.star - a.star; });
+
   var body =
-    '<div class="mdw-result-tags">' +
-      RECRUIT_RESULT.tags.map(function (t) {
-        return '<span class="mdw-tag-pill s' + t[1] + '">' + esc(t[0]) + '</span>';
-      }).join('') +
+    '<div class="mdw-rc-result">识别结果: ' +
+      st.detected.map(function (t) { return '<span class="mdw-rc-tag">' + esc(t) + '</span>'; }).join('') +
     '</div>' +
-    RECRUIT_RESULT.groups.map(function (g) {
-      return '<div class="mdw-result-group">' +
-        '<div class="mdw-result-group-head">' +
-          '<span class="mdw-star s' + g.star + '">' + '★'.repeat(g.star) + '</span>' +
-          '<span class="mdw-muted">Tags: ' + esc(g.tag) + '</span>' +
-          '<span class="mdw-muted">' + g.ops.length + ' 名干员</span>' +
-        '</div>' +
-        '<div class="mdw-result-ops">' + g.ops.map(function (op) {
-          var isNew = op[1] === 'NEW';
-          var pot = op[1] === 'NEW' ? '(!!! NEW !!!)' : (op[1] ? '(' + op[1] + ')' : '');
-          return '<span class="mdw-result-op">' + esc(op[0]) +
-            (pot ? '<span class="mdw-result-pot' + (isNew ? ' new' : '') + '">' + esc(pot) + '</span>' : '') + '</span>';
+    groups.map(function (g) {
+      return '<div class="mdw-rc-group">' +
+        '<div class="mdw-rc-group-head">' + g.star + '★ Tags: <span class="mdw-rc-group-tag">' + esc(g.tag) + '</span></div>' +
+        '<div class="mdw-rc-ops">' + g.ops.map(function (o) {
+          var isNew = NEW_OPS.indexOf(o.n) >= 0;
+          var mark = isNew ? '(!!! NEW !!!)' : '(' + (mockPotential(o.n) >= 6 ? 'MAX' : mockPotential(o.n)) + ')';
+          return '<span class="mdw-rc-op r' + o.r + (isNew ? ' is-new' : '') + '">' + esc(o.n) +
+            '<span class="mdw-rc-op-mark">' + esc(mark) + '</span></span>';
         }).join('') + '</div>' +
       '</div>';
     }).join('');
-  var meta = '状态：<b>识别完成</b> · 最高 ' + maxStar + '★ · 共 ' +
-    RECRUIT_RESULT.groups.reduce(function (a, g) { return a + g.ops.length; }, 0) + ' 名干员 · 上次同步 ' + esc(st.last);
+
+  var times = [3, 4, 5, 6].map(function (n) {
+    return '<div class="mdw-rc-time-row">' +
+      '<label class="mdw-check"><input type="checkbox" class="app-checkbox" checked/><span>自动选择 ' + n + ' 星 Tags</span></label>' +
+      '<div class="mdw-rc-clock">' +
+        '<input type="number" class="app-input-text" min="0" max="23" value="09"/>' +
+        '<span>:</span>' +
+        '<input type="number" class="app-input-text" min="0" max="59" value="00"/>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
   var cfg =
-    '<label class="mdw-check"><input type="checkbox" class="app-checkbox" checked/><span>自动设置时间</span></label>' +
-    '<label class="mdw-check"><input type="checkbox" class="app-checkbox" id="r-show-potential"/><span>显示干员潜能 (4/5/6 星 Tags)</span></label>' +
-    '<div class="mdw-cfg-line"><span>自动选择 3★ Tags</span>' + selectHtml([['540', '9:00'], ['480', '8:00'], ['420', '7:00'], ['360', '6:00'], ['0', '不选择']], '540', 'r-time-3') + '</div>' +
-    '<div class="mdw-cfg-line"><span>自动选择 4★ Tags</span>' + selectHtml([['540', '9:00'], ['480', '8:00'], ['420', '7:00'], ['0', '不选择']], '540', 'r-time-4') + '</div>' +
-    '<div class="mdw-cfg-line"><span>自动选择 5★ Tags</span>' + selectHtml([['540', '9:00'], ['480', '8:00'], ['0', '不选择']], '540', 'r-time-5') + '</div>' +
-    '<div class="mdw-cfg-line"><span>自动选择 6★ Tags</span>' + selectHtml([['540', '9:00'], ['0', '不选择']], '540', 'r-time-6') + '</div>';
-  return toolShell('公招识别', meta, body, cfg, '开始识别');
+    '<div class="mdw-rc-cfg">' +
+      '<div class="mdw-rc-cfg-left">' +
+        '<label class="mdw-check"><input type="checkbox" class="app-checkbox" checked/><span>自动设置时间</span></label>' +
+        '<label class="mdw-check"><input type="checkbox" class="app-checkbox"/><span>显示干员潜能 (4/5/6★ Tags)</span></label>' +
+      '</div>' +
+      '<div class="mdw-rc-cfg-mid">' + times + '</div>' +
+    '</div>';
+
+  return '<div class="mdw-tool">' +
+      '<div class="mdw-tool-head">' +
+        '<div class="mdw-tool-title">公招识别</div>' +
+        '<div class="mdw-tool-meta">数据源：MAA resource/recruitment.json（' + MAA_RECRUIT.ops.length + ' 名干员 / ' + MAA_RECRUIT.tags.length + ' 个标签） · 上次同步 ' + esc(st.last) + '</div>' +
+      '</div>' +
+      '<div class="mdw-tool-body">' + body + '</div>' +
+      '<div class="mdw-tool-foot">' + cfg +
+        '<button type="button" class="app-btn mdw-btn-primary mdw-tool-start" id="tools-start">开始识别</button>' +
+      '</div>' +
+    '</div>';
 }
 
-/* --- 干员识别 --- */
-var OPERATOR_DATA = {
-  6: ['缪因', '维伊', '娜斯提', '妮芙', '乌尔比安', '玛露西尔', '魔王', '阿斯卡纶', '锏', '仇白', '令', '刺银柏', '焰狐龙梓兰', '凛御银灰', '斩业星熊', '拉普兰德', '麒麟R夜刀', '缄默德克萨斯', '维什戴尔', '圣聆初雪', '假日威龙陈', '新约能天使', '予愿安洁莉娜', '凯尔希', '银灰'],
-  5: ['白铁', '缇缇', '号角', '隐德来希', '芙丽妮', '帕拉斯', '风丸', '斩业星熊', '石棉', '古米', '羽毛笔', '休谟斯', '山', '海沫', '怒潮凛冬', '百炼嘉维尔', '仇白', '煌', '艾丽妮'],
-  4: ['稀音', '苏苏洛', '嘉维尔', '清流', '安赛尔', '讯使', '芬', '林', '铅踝', '白雪', '罗小黑', '跃跃', '伊桑', '芳汀', '梅', '流星', '克洛丝', '斑点'],
-  3: ['空爆', '巡林者', '正义骑士号', '安德切尔', '史都华德', '炎熔', '芙蓉', '调香师', '阿消', '卡缇', '米格鲁', '克洛丝'],
-  2: ['杜林', '夜烟', '远山', '惊蛰', '12F'],
-  1: ['Castle-3', 'Lancet-2', 'THRM-EX', '正义骑士号']
-};
-var OPERATOR_OWNED = { '凯尔希': 1, '银灰': 1, '煌': 1, '艾丽妮': 1, '山': 1, '羽毛笔': 1, '苏苏洛': 1, '克洛丝': 1, '米格鲁': 1, '卡缇': 1 };
+/* ============ 干员识别 ============ */
+/* 干员表：character_table.json（MAA_OPERATORS，按星级分组） */
+var OPER_MISSING_COUNT = 71;
+function operTotal() {
+  var n = 0;
+  Object.keys(MAA_OPERATORS).forEach(function (k) { n += MAA_OPERATORS[k].length; });
+  return n;
+}
+function operMissingSet() {
+  /* 原型：用名字散列挑出固定的一批作为「未拥有」，数量对齐真实识别结果 */
+  var all = [];
+  [6, 5, 4, 3, 2, 1].forEach(function (r) {
+    (MAA_OPERATORS[r] || []).forEach(function (n) { all.push({ n: n, r: r }); });
+  });
+  var sorted = all.slice().sort(function (a, b) {
+    var ha = mockPotential(a.n), hb = mockPotential(b.n);
+    return ha - hb || a.n.localeCompare(b.n);
+  });
+  var missing = {};
+  sorted.slice(0, OPER_MISSING_COUNT).forEach(function (o) { missing[o.n] = true; });
+  return missing;
+}
+var OPER_MISSING = null;
 
 function toolsOperatorContent() {
   var st = TOOL_STATE.operator;
-  var total = 0, owned = 0;
-  Object.keys(OPERATOR_DATA).forEach(function (r) { total += OPERATOR_DATA[r].length; });
-  Object.keys(OPERATOR_DATA).forEach(function (r) {
-    OPERATOR_DATA[r].forEach(function (n) { if (OPERATOR_OWNED[n]) owned++; });
+  if (!OPER_MISSING) OPER_MISSING = operMissingSet();
+  var owned = [], missingN = 0;
+  [6, 5, 4, 3, 2, 1].forEach(function (r) {
+    (MAA_OPERATORS[r] || []).forEach(function (n) {
+      if (OPER_MISSING[n]) missingN += 1;
+      else owned.push({ n: n, r: r });
+    });
   });
-  var kw = (st.keyword || '').trim();
   var body =
-    '<div class="mdw-result-filter">' +
-      textHtml('op-search', st.keyword, '搜索干员名…') +
-      '<div class="mdw-star-filter">' +
-        [['all', '全部'], ['6', '6★'], ['5', '5★'], ['4', '4★'], ['3', '3★'], ['2', '2★'], ['1', '1★']].map(function (f) {
-          return '<span class="mdw-filter-chip' + (st.filter === f[0] ? ' active' : '') + '" data-star="' + f[0] + '">' + f[1] + '</span>';
-        }).join('') +
-      '</div>' +
-      '<div class="mdw-star-filter">' +
-        [['all', '全部'], ['owned', '已拥有'], ['missing', '未拥有']].map(function (f) {
-          return '<span class="mdw-filter-chip' + (st.ownedFilter === f[0] ? ' active' : '') + '" data-owned="' + f[0] + '">' + f[1] + '</span>';
-        }).join('') +
-      '</div>' +
+    '<div class="mdw-op-head">识别完成 特别关注会影响干员识别准确率，如有特别关注干员识别错误请自行判断。</div>' +
+    '<div class="mdw-op-counters">' +
+      '<span class="mdw-op-counter">未拥有: ' + missingN + '</span>' +
+      '<span class="mdw-op-counter">已拥有: ' + owned.length + '</span>' +
     '</div>' +
-    '<div class="mdw-result-stats">' +
-      '<span class="mdw-stat"><b>' + owned + '</b> 已拥有</span>' +
-      '<span class="mdw-stat"><b>' + (total - owned) + '</b> 未拥有</span>' +
-      '<span class="mdw-stat"><b>' + total + '</b> 总计</span>' +
-    '</div>' +
-    [6, 5, 4, 3, 2, 1].map(function (r) {
-      if (st.filter !== 'all' && st.filter !== String(r)) return '';
-      var list = OPERATOR_DATA[r].filter(function (n) {
-        if (kw && n.indexOf(kw) < 0) return false;
-        var isOwned = !!OPERATOR_OWNED[n];
-        if (st.ownedFilter === 'owned' && !isOwned) return false;
-        if (st.ownedFilter === 'missing' && isOwned) return false;
-        return true;
-      });
-      if (!list.length) return '';
-      return '<div class="mdw-result-group">' +
-        '<div class="mdw-result-group-head"><span class="mdw-star s' + r + '">' + '★'.repeat(r) + '</span><span class="mdw-muted">' + list.length + ' 名</span></div>' +
-        '<div class="mdw-result-ops">' + list.map(function (n) {
-          return '<span class="mdw-op-card' + (OPERATOR_OWNED[n] ? '' : ' missing') + '">' + esc(n) + '</span>';
-        }).join('') + '</div>' +
-      '</div>';
-    }).join('');
-  var meta = '状态：<b>识别完成</b> · 特别关注会影响干员识别准确率，如有识别错误请自行判断 · 上次同步 ' + esc(st.last);
-  var cfg = '<div class="mdw-cfg-line"><span>导出格式</span>' +
+    '<div class="mdw-op-grid">' + owned.map(function (o) {
+      return '<div class="mdw-op-card"><div class="mdw-op-name">' + esc(o.n) + '</div>' +
+        '<div class="mdw-op-stars r' + o.r + '">' + '★'.repeat(o.r) + '</div></div>';
+    }).join('') + '</div>';
+
+  var cfg = '<div class="mdw-cfg-line"><span>导出到:</span>' +
     selectHtml([['clipboard', '剪切板'], ['json', 'JSON'], ['markdown', 'Markdown'], ['csv', 'CSV']], 'clipboard', 'o-export') + '</div>' +
-    '<button type="button" class="app-btn" id="o-export-btn">导出</button>' +
-    '<div class="mdw-cfg-line"><span>同步触发</span>' + selectHtml([['auto', '自动（每日）'], ['manual', '手动']], 'auto', 'o-trigger') + '</div>';
-  return toolShell('干员识别', meta, body, cfg, '开始识别');
+    '<button type="button" class="app-btn" id="o-export-btn">导出</button>';
+
+  return '<div class="mdw-tool">' +
+      '<div class="mdw-tool-head">' +
+        '<div class="mdw-tool-title">干员识别</div>' +
+        '<div class="mdw-tool-meta">上次同步时间: ' + esc(st.last) + ' · 数据源：character_table.json（共 ' + operTotal() + ' 名干员）</div>' +
+      '</div>' +
+      '<div class="mdw-tool-body">' + body + '</div>' +
+      '<div class="mdw-tool-foot">' + cfg +
+        '<button type="button" class="app-btn mdw-btn-primary mdw-tool-start" id="tools-start">开始识别</button>' +
+      '</div>' +
+    '</div>';
 }
 
-/* --- 仓库识别 --- */
-var DEPOT_DATA = [
-  { cat: '常规', items: [['至纯源石', 16], ['合成玉', 460], ['龙门币', '1.8M'], ['赤金', '15k'], ['采购凭证', 2643]] },
-  { cat: '作战记录', items: [['高级作战记录', 9], ['中级作战记录', 8223], ['初级作战记录', '16k'], ['基础作战记录', '58k']] },
-  { cat: '技巧概要', items: [['技巧概要·卷3', 567], ['技巧概要·卷2', 2158], ['技巧概要·卷1', 5788]] },
-  { cat: '模组与芯片', items: [['模组数据块', 418], ['数据增补仪', 368], ['数据增补条', 1353], ['芯片助剂', 12]] },
-  { cat: '高级材料', items: [['重相位对映体', 13], ['双极纳米片', 47], ['D32钢', 49], ['电子单元', 41], ['聚酸酯块', 5], ['烧结核凝晶', 8]] },
-  { cat: '家具与凭证', items: [['家具零件', '24k'], ['装修零件', 320], ['应急理智顶液', 3]] }
-];
-
+/* ============ 仓库识别 ============ */
 function toolsDepotContent() {
   var st = TOOL_STATE.depot;
-  var kw = (st.keyword || '').trim();
   var body =
-    '<div class="mdw-result-filter">' +
-      textHtml('dp-search', st.keyword, '搜索材料…') +
-      '<div class="mdw-star-filter">' +
-        [['all', '全部']].concat(DEPOT_DATA.map(function (c) { return [c.cat, c.cat]; })).map(function (f) {
-          return '<span class="mdw-filter-chip' + (st.cat === f[0] ? ' active' : '') + '" data-cat="' + esc(f[0]) + '">' + esc(f[1]) + '</span>';
+    '<div class="mdw-op-head">识别完成</div>' +
+    '<div class="mdw-depot-grid2">' + MAA_DEPOT_ITEMS.map(function (it) {
+      return '<div class="mdw-depot-card2">' +
+        '<div class="mdw-depot-icon2">' + esc(String(it[1]).slice(0, 1)) + '</div>' +
+        '<div class="mdw-depot-text"><div class="mdw-depot-name2">' + esc(it[1]) + '</div>' +
+        '<div class="mdw-depot-qty2">' + esc(String(it[2])) + '</div></div>' +
+      '</div>';
+    }).join('') + '</div>';
+
+  var cfg = '<div class="mdw-cfg-line"><span>导出到:</span>' +
+    selectHtml([['penguin', '企鹅物流刷图规划'], ['toolbox', '明日方舟工具箱'], ['markdown', 'Markdown'], ['csv', 'CSV']], 'penguin', 'd-export') + '</div>' +
+    '<button type="button" class="app-btn" id="d-export-btn">导出</button>';
+
+  return '<div class="mdw-tool">' +
+      '<div class="mdw-tool-head">' +
+        '<div class="mdw-tool-title">仓库识别</div>' +
+        '<div class="mdw-tool-meta">上次同步时间: ' + esc(st.last) + ' · 数据源：resource/item_index.json</div>' +
+      '</div>' +
+      '<div class="mdw-tool-body">' + body + '</div>' +
+      '<div class="mdw-tool-foot">' + cfg +
+        '<button type="button" class="app-btn mdw-btn-primary mdw-tool-start" id="tools-start">开始识别</button>' +
+      '</div>' +
+    '</div>';
+}
+
+/* ============ 牛牛抽卡 / 牛牛监控 ============ */
+function mockScreen(fps) {
+  return '<div class="mdw-scr">' +
+      '<span class="mdw-scr-fps">' + fps + ' FPS</span>' +
+      '<div class="mdw-scr-noise"></div>' +
+      '<div class="mdw-scr-hint">设备画面（未连接设备时显示占位）</div>' +
+    '</div>';
+}
+
+function toolsGachaContent() {
+  var st = TOOL_STATE.gacha;
+  var body;
+  if (!st.started) {
+    body = '<div class="mdw-gacha-warn" id="gacha-warn">' +
+        '<div class="mdw-gacha-warn-text">请注意，这是 <span class="mdw-rainbow">真正的抽卡</span></div>' +
+        '<div class="mdw-muted">该功能属于危险功能，可能会造成误抽</div>' +
+        '<button type="button" class="app-btn mdw-btn-primary" id="gacha-ok">知道了</button>' +
+        '<label class="mdw-check"><input type="checkbox" class="app-checkbox" id="gacha-no-show"/><span>下次不再提示</span></label>' +
+      '</div>';
+  } else {
+    body = '<div class="mdw-gacha-lore" id="gacha-tip">' + esc(GACHA_TIP) + '</div>' +
+      mockScreen('0.00') +
+      '<div class="mdw-gacha-actions">' +
+        '<button type="button" class="app-btn" id="gacha-once" disabled>寻访一次</button>' +
+        '<button type="button" class="app-btn" id="gacha-ten" disabled>寻访十次</button>' +
+        '<button type="button" class="app-btn" id="gacha-stop">Stop!</button>' +
+      '</div>';
+  }
+  return '<div class="mdw-tool">' +
+      '<div class="mdw-tool-head">' +
+        '<div class="mdw-tool-title">牛牛抽卡</div>' +
+        '<div class="mdw-tool-meta">真抽卡，会消耗游戏内资源</div>' +
+      '</div>' +
+      '<div class="mdw-tool-body mdw-tool-center">' + body + '</div>' +
+    '</div>';
+}
+
+var GACHA_TIP = '在罗德岛竟然有这么多志同道合的志士。是的，诗歌！战争！自由！能在历史的洪流中汇集众人的力量，为这片大地的改变而奋斗。真是令人振奋！这些悲壮又非凡的故事，是应当被传颂下去的。';
+
+function toolsMonitorContent() {
+  var st = TOOL_STATE.monitor;
+  var body = st.playing
+    ? mockScreen('0.00') + '<div class="mdw-monitor-bottom"><button type="button" class="app-btn mdw-monitor-stop" id="monitor-stop">Stop!</button>' + monitorFps() + '</div>'
+    : '<div class="mdw-monitor-prompt">看看牛牛眼中的世界?</div>' +
+      '<div class="mdw-monitor-center"><button type="button" class="app-btn mdw-gacha-peep" id="monitor-peep">Peep!</button>' + monitorFps() + '</div>';
+  return '<div class="mdw-tool">' +
+      '<div class="mdw-tool-head">' +
+        '<div class="mdw-tool-title">牛牛监控</div>' +
+        '<div class="mdw-tool-meta">实时查看设备画面（需先连接设备）</div>' +
+      '</div>' +
+      '<div class="mdw-tool-body mdw-tool-center">' + body + '</div>' +
+    '</div>';
+}
+
+function monitorFps() {
+  return '<div class="mdw-monitor-fps"><span>目标帧率</span>' + numHtml('m-fps', 1, 1, 60) + '</div>';
+}
+
+/* ============ 牛杂（MAA_MINIGAME，来自 zh-cn 资源表） ============ */
+var cowtoolsSel = { current: 'blackflow_money', permanent: 'ss_store' };
+
+function cowtoolsFind(kind, id) {
+  var list = MAA_MINIGAME[kind] || [];
+  return list.filter(function (x) { return x[0] === id; })[0] || list[0];
+}
+
+function toolsCowtoolsContent() {
+  var sel = cowtoolsSel.current ? cowtoolsFind('current', cowtoolsSel.current) : cowtoolsFind('permanent', cowtoolsSel.permanent);
+  var inCurrent = !!cowtoolsSel.current;
+  var body =
+    '<div class="mdw-cow-left">' +
+      '<div class="mdw-cow-list">' +
+        '<div class="mdw-cow-cat">' + esc(MAA_STR('MiniGameCategoryCurrentEvent', '当期活动')) + '</div>' +
+        MAA_MINIGAME.current.map(function (x) {
+          return '<div class="mdw-cow-item' + (inCurrent && x[0] === sel[0] ? ' selected' : '') + '" data-kind="current" data-id="' + esc(x[0]) + '">' + esc(x[1]) + '</div>';
+        }).join('') +
+        '<div class="mdw-cow-cat">' + esc(MAA_STR('MiniGameCategoryPermanent', '常驻活动')) + '</div>' +
+        MAA_MINIGAME.permanent.map(function (x) {
+          return '<div class="mdw-cow-item' + (!inCurrent && x[0] === sel[0] ? ' selected' : '') + '" data-kind="permanent" data-id="' + esc(x[0]) + '">' + esc(x[1]) + '</div>';
         }).join('') +
       '</div>' +
+      '<button type="button" class="app-btn mdw-cow-start" id="cow-run">Link Start!</button>' +
     '</div>' +
-    DEPOT_DATA.filter(function (c) { return st.cat === 'all' || st.cat === c.cat; }).map(function (c) {
-      var items = c.items.filter(function (i) { return !kw || i[0].indexOf(kw) >= 0; });
-      if (!items.length) return '';
-      return '<div class="mdw-result-group">' +
-        '<div class="mdw-result-group-head"><span class="mdw-muted">' + esc(c.cat) + '</span><span class="mdw-muted">' + items.length + ' 项</span></div>' +
-        '<div class="mdw-depot-grid2">' + items.map(function (i) {
-          return '<div class="mdw-depot-card2"><span class="mdw-depot-icon2 s-mat"></span>' +
-            '<span class="mdw-depot-name2">' + esc(i[0]) + '</span>' +
-            '<span class="mdw-depot-qty2">' + esc(String(i[1])) + '</span></div>';
-        }).join('') + '</div>' +
-      '</div>';
-    }).join('');
-  var meta = '状态：<b>识别完成</b> · 需在仓库界面停留以保证识别准确 · 上次同步 ' + esc(st.last);
-  var cfg = '<div class="mdw-cfg-line"><span>导出至</span>' +
-    selectHtml([['penguin', '企鹅物流刷图规划'], ['toolbox', '明日方舟工具箱'], ['markdown', 'Markdown'], ['csv', 'CSV']], 'penguin', 'd-export') + '</div>' +
-    '<button type="button" class="app-btn" id="d-export-btn">导出</button>' +
-    '<div class="mdw-cfg-line"><span>导出后</span>' + selectHtml([['none', '不处理'], ['copy', '复制到剪切板'], ['download', '下载文件']], 'copy', 'd-after') + '</div>';
-  return toolShell('仓库识别', meta, body, cfg, '开始识别');
-}
+    '<div class="mdw-cow-mid">' +
+      (sel[0] === 'secret_front'
+        ? '<div class="mdw-cow-opts">' +
+            '<div class="mdw-cfg-line"><span>' + esc(MAA_STR('MiniGame@SecretFront@Ending', '结局')) + ':</span>' +
+              selectHtml(MAA_MINIGAME.secretFront.ending, 'A', 'cow-ending') + '</div>' +
+            '<div class="mdw-cfg-line"><span>' + esc(MAA_STR('MiniGame@SecretFront@Event', '优先系列事件')) + ':</span>' +
+              selectHtml(MAA_MINIGAME.secretFront.event, '', 'cow-event') + '</div>' +
+          '</div>'
+        : '') +
+      '<div class="mdw-cow-desc">' + esc(sel[2] || MAA_STR('MiniGameNameEmptyTip', '在上方选择小游戏以开始运行。')) + '</div>' +
+    '</div>' +
+    '<div class="mdw-cow-right"><div class="mdw-cow-log" id="cow-log">' +
+      COW_LOG.map(function (l) { return '<div class="mdw-cow-line"><span class="mdw-log-time">' + esc(l[0]) + '</span> ' + esc(l[1]) + '</div>'; }).join('') +
+    '</div></div>';
 
-/* --- 牛牛抽卡 --- */
-function toolsGachaContent() {
   return '<div class="mdw-tool">' +
-      '<div class="mdw-tool-head"><div class="mdw-tool-title">牛牛抽卡</div>' +
-      '<div class="mdw-tool-meta">仅供娱乐，与游戏内寻访无关</div></div>' +
-      '<div class="mdw-tool-body">' +
-        '<div class="mdw-gacha-warn" id="gacha-warn">' +
-          '<div class="mdw-gacha-warn-text">请注意，这是 <span class="mdw-rainbow">真正的抽卡</span></div>' +
-          '<button type="button" class="app-btn mdw-btn-primary" id="gacha-ok">知道了</button>' +
-          '<label class="mdw-check"><input type="checkbox" class="app-checkbox" id="gacha-no-show"/><span>下次不再提示</span></label>' +
-        '</div>' +
-        '<div class="mdw-gacha-main" id="gacha-main" style="display:none">' +
-          '<div class="mdw-gacha-lore">在罗德岛竟然有这么多志同道合的志士。是的，诗歌！战争！自由！能在历史的洪流中汇集众人的力量，为这片大地的改变而奋斗。真是令人振奋！这些悲壮又非凡的故事，是应当被传颂下去的。</div>' +
-          '<div class="mdw-gacha-meta"><span class="mdw-muted">累计寻访 0 次 · 6★ 0 / 5★ 0 / 4★ 0</span><span class="mdw-gacha-fps">0.00 FPS</span></div>' +
-          '<div class="mdw-gacha-actions">' +
-            '<button type="button" class="app-btn mdw-gacha-btn" disabled>寻访一次</button>' +
-            '<button type="button" class="app-btn mdw-gacha-btn" disabled>寻访十次</button>' +
-            '<button type="button" class="app-btn mdw-gacha-peep" id="gacha-peep">Peep!</button>' +
-          '</div>' +
-          '<div class="mdw-muted">正式版连接设备后，此处会显示寻访动画与结果。</div>' +
-        '</div>' +
+      '<div class="mdw-tool-head">' +
+        '<div class="mdw-tool-title">牛杂</div>' +
+        '<div class="mdw-tool-meta">小游戏与商店快捷执行 · 文案取自 zh-cn 资源表 MiniGame*</div>' +
       '</div>' +
+      '<div class="mdw-tool-body"><div class="mdw-cow">' + body + '</div></div>' +
     '</div>';
 }
 
-/* --- 牛牛监控 --- */
-function toolsMonitorContent() {
-  return '<div class="mdw-tool">' +
-      '<div class="mdw-tool-head"><div class="mdw-tool-title">牛牛监控</div>' +
-      '<div class="mdw-tool-meta">实时查看 MAA 眼中的设备画面</div></div>' +
-      '<div class="mdw-tool-body">' +
-        '<div class="mdw-monitor-prompt">看看牛牛眼中的世界?</div>' +
-        '<div class="mdw-monitor-actions">' +
-          '<button type="button" class="app-btn mdw-gacha-peep" id="monitor-peep">Peep!</button>' +
-          '<div class="mdw-monitor-fps"><label>目标帧率</label>' + numHtml('m-fps', 1, 1, 60) + '</div>' +
-        '</div>' +
-        '<div class="mdw-monitor-grid">' +
-          [['设备分辨率', '1920x1080', 60], ['截图间隔', '800 ms', 45], ['当前连接', '192.168.31.190:5555', 80], ['识别耗时', '32 ms', 20]].map(function (m) {
-            return '<div class="mdw-monitor-card"><div class="mdw-monitor-label">' + esc(m[0]) + '</div>' +
-              '<div class="mdw-monitor-value">' + esc(m[1]) + '</div>' +
-              '<div class="mdw-monitor-bar"><div style="width:' + m[2] + '%"></div></div></div>';
-          }).join('') +
-        '</div>' +
-      '</div>' +
-    '</div>';
+var COW_LOG = [
+  ['00:20:02', '当前设施: 宿舍 01'], ['00:20:59', '当前设施: 发电站 01'], ['00:22:17', '当前设施: 发电站 02'],
+  ['00:23:00', '当前设施: 发电站 03'], ['00:23:50', '当前设施: 办公室 01'], ['00:25:24', '当前设施: 控制中枢 01'],
+  ['00:28:18', '当前设施: 制造站 01'], ['00:30:24', '当前设施: 制造站 02'], ['00:31:08', '当前设施: 制造站 03'],
+  ['00:32:10', '当前设施: 制造站 04'], ['00:33:29', '当前设施: 贸易站 01'], ['00:36:04', '当前设施: 贸易站 02'],
+  ['00:38:04', '当前设施: 会客室 01'], ['00:41:12', '当前设施: 宿舍 01'], ['00:42:13', '当前设施: 宿舍 02'],
+  ['00:42:59', '当前设施: 宿舍 03'], ['00:43:45', '当前设施: 宿舍 04'], ['00:45:20', '当前设施: 训练室 01'],
+  ['00:45:23', '训练室空闲中'], ['00:45:42', '完成任务: 基建换班'], ['00:45:43', '开始任务: 领取奖励'],
+  ['00:47:00', '完成任务: 领取奖励'], ['00:47:00', '任务已全部完成!']
+];
+
+function MAA_STR(key, fallback) {
+  return (window.__MAA_STRINGS && window.__MAA_STRINGS[key]) || fallback;
 }
 
-/* --- 生息演算/活动：牛杂 --- */
-function toolsCowtoolsContent() {
-  return '<div class="mdw-tool">' +
-      '<div class="mdw-tool-head"><div class="mdw-tool-title">牛杂</div>' +
-      '<div class="mdw-tool-meta">活动与常驻玩法快捷执行（正式版对接 MaaCore）</div></div>' +
-      '<div class="mdw-tool-body mdw-cowtools-body">' +
-        '<div class="mdw-cowtools-left">' +
-          '<div class="mdw-cowtools-box">' +
-            '<div class="mdw-cowtools-box-title">当期活动</div>' +
-            '<div class="mdw-cowtools-item">黑流树海刷钱</div>' +
-          '</div>' +
-          '<div class="mdw-cowtools-box">' +
-            '<div class="mdw-cowtools-box-title">常驻活动</div>' +
-            '<div class="mdw-cowtools-item">活动商店</div>' +
-            '<div class="mdw-cowtools-item">绿票商店</div>' +
-            '<div class="mdw-cowtools-item">黄票商店</div>' +
-            '<div class="mdw-cowtools-item">生息演算商店</div>' +
-            '<div class="mdw-cowtools-item">隐秘战线</div>' +
-          '</div>' +
-        '</div>' +
-        '<div class="mdw-cowtools-right">' +
-          '<div class="mdw-cowtools-log" id="cow-log">' +
-            '<div class="mdw-cowtools-log-line"><span class="mdw-log-time">20:13:36</span> 3★ Tags</div>' +
-            '<div class="mdw-cowtools-log-line"><span class="mdw-log-time">20:13:40</span> 已确认招募 1</div>' +
-            '<div class="mdw-cowtools-log-line"><span class="mdw-log-time">20:20:10</span> 当前设施: 宿舍 01</div>' +
-            '<div class="mdw-cowtools-log-line"><span class="mdw-log-time">20:22:21</span> 当前设施: 发电站 02</div>' +
-          '</div>' +
-        '</div>' +
-      '</div>' +
-      '<div class="mdw-tool-foot">' +
-        '<div class="mdw-tool-cfg"><label class="mdw-check"><input type="checkbox" class="app-checkbox" checked/><span>执行后返回主界面</span></label></div>' +
-        '<button type="button" class="app-btn mdw-btn-primary" id="cow-run">开始</button>' +
-      '</div>' +
-    '</div>';
-}
-
-/* --- 资源更新 --- */
+/* ============ 资源更新 ============ */
 function toolsResourceContent() {
   var rows = [
     ['客户端资源', '月行水上 #0914', '最新'],
     ['MAA 资源包', 'v6.17.5-r1', '最新'],
-    ['作业站数据', '2026-09-15 08:00', '可更新'],
-    ['干员数据 (PRTS)', '2026-09-14', '最新'],
-    ['关卡数据 (企鹅物流)', '2026-09-13', '可更新']
+    ['作业站数据', '2026-09-16 08:00', '可更新'],
+    ['干员数据 (PRTS)', '2026-09-15', '最新'],
+    ['关卡数据 (企鹅物流)', '2026-09-14', '可更新']
   ];
   var body = '<table class="app-table-view mdw-res-table"><thead><tr><th>资源</th><th>当前版本</th><th>状态</th><th></th></tr></thead><tbody>' +
     rows.map(function (r) {
@@ -2535,10 +2575,16 @@ function toolsResourceContent() {
         '<td><span class="mdw-pill ' + (r[2] === '最新' ? 'ok' : '') + '">' + esc(r[2]) + '</span></td>' +
         '<td><button type="button" class="app-btn" style="font-size:12px;padding:2px 10px"' + (r[2] === '最新' ? ' disabled' : '') + '>更新</button></td></tr>';
     }).join('') + '</tbody></table>';
-  var meta = '上次检查：' + esc(TOOL_STATE.resource.last) + ' · 更新会覆盖 resource 目录';
   var cfg = '<label class="mdw-check"><input type="checkbox" class="app-checkbox" checked/><span>自动检查资源更新</span></label>' +
     '<div class="mdw-cfg-line"><span>更新源</span>' + selectHtml([['github', 'GitHub'], ['mirror', '国内镜像'], ['custom', '自定义']], 'mirror', 'res-src') + '</div>';
-  return toolShell('资源更新', meta, body, cfg, '检查更新');
+  return '<div class="mdw-tool">' +
+      '<div class="mdw-tool-head"><div class="mdw-tool-title">资源更新</div>' +
+      '<div class="mdw-tool-meta">上次检查：' + esc(TOOL_STATE.resource.last) + '</div></div>' +
+      '<div class="mdw-tool-body">' + body + '</div>' +
+      '<div class="mdw-tool-foot">' + cfg +
+        '<button type="button" class="app-btn mdw-btn-primary mdw-tool-start" id="tools-start">检查更新</button>' +
+      '</div>' +
+    '</div>';
 }
 
 function bindToolsEvents(el) {
@@ -2549,55 +2595,58 @@ function bindToolsEvents(el) {
     startBtn.disabled = true;
     setTimeout(function () { startBtn.textContent = label; startBtn.disabled = false; }, 1500);
   });
+
+  // 牛牛抽卡
   var gachaOk = el.querySelector('#gacha-ok');
   if (gachaOk) gachaOk.addEventListener('click', function () {
-    el.querySelector('#gacha-warn').style.display = 'none';
-    el.querySelector('#gacha-main').style.display = '';
-  });
-  ['#gacha-peep', '#monitor-peep'].forEach(function (sel) {
-    var b = el.querySelector(sel);
-    if (b) b.addEventListener('click', function () {
-      b.textContent = 'Peeping...';
-      setTimeout(function () { b.textContent = 'Peep!'; }, 1500);
-    });
-  });
-  var cow = el.querySelector('#cow-run');
-  if (cow) cow.addEventListener('click', function () {
-    cow.textContent = cow.textContent === '开始' ? '停止' : '开始';
-  });
-  var exp = el.querySelector('#o-export-btn');
-  if (exp) exp.addEventListener('click', function () { exp.textContent = '已导出'; var b = exp; setTimeout(function () { b.textContent = '导出'; }, 1200); });
-  var dexp = el.querySelector('#d-export-btn');
-  if (dexp) dexp.addEventListener('click', function () { dexp.textContent = '已导出'; var b = dexp; setTimeout(function () { b.textContent = '导出'; }, 1200); });
-
-  // 干员识别：搜索 / 星级 / 拥有状态筛选
-  var oSearch = el.querySelector('#op-search');
-  if (oSearch) oSearch.addEventListener('input', function () {
-    TOOL_STATE.operator.keyword = oSearch.value;
-    var box = el.querySelector('.mdw-tool-body');
-    var t = document.createRange().createContextualFragment('');
-    void t;
+    TOOL_STATE.gacha.started = true;
     el.querySelector('#tools-body').innerHTML = renderToolsContent();
     bindToolsEvents(el);
-    var again = el.querySelector('#op-search');
-    if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
   });
-  el.querySelectorAll('.mdw-star-filter .mdw-filter-chip').forEach(function (c) {
-    c.addEventListener('click', function () {
-      if (c.dataset.star) TOOL_STATE.operator.filter = c.dataset.star;
-      if (c.dataset.owned) TOOL_STATE.operator.ownedFilter = c.dataset.owned;
-      if (c.dataset.cat) TOOL_STATE.depot.cat = c.dataset.cat;
+  var gachaStop = el.querySelector('#gacha-stop');
+  if (gachaStop) gachaStop.addEventListener('click', function () {
+    TOOL_STATE.gacha.started = false;
+    el.querySelector('#tools-body').innerHTML = renderToolsContent();
+    bindToolsEvents(el);
+  });
+
+  // 牛牛监控
+  var peep = el.querySelector('#monitor-peep');
+  if (peep) peep.addEventListener('click', function () {
+    TOOL_STATE.monitor.playing = true;
+    el.querySelector('#tools-body').innerHTML = renderToolsContent();
+    bindToolsEvents(el);
+  });
+  var mstop = el.querySelector('#monitor-stop');
+  if (mstop) mstop.addEventListener('click', function () {
+    TOOL_STATE.monitor.playing = false;
+    el.querySelector('#tools-body').innerHTML = renderToolsContent();
+    bindToolsEvents(el);
+  });
+
+  // 牛杂：选择小游戏
+  el.querySelectorAll('.mdw-cow-item').forEach(function (item) {
+    item.addEventListener('click', function () {
+      if (item.dataset.kind === 'current') { cowtoolsSel.current = item.dataset.id; cowtoolsSel.permanent = ''; }
+      else { cowtoolsSel.permanent = item.dataset.id; cowtoolsSel.current = ''; }
       el.querySelector('#tools-body').innerHTML = renderToolsContent();
       bindToolsEvents(el);
     });
   });
-  var dSearch = el.querySelector('#dp-search');
-  if (dSearch) dSearch.addEventListener('input', function () {
-    TOOL_STATE.depot.keyword = dSearch.value;
-    el.querySelector('#tools-body').innerHTML = renderToolsContent();
-    bindToolsEvents(el);
-    var again = el.querySelector('#dp-search');
-    if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+  var cowRun = el.querySelector('#cow-run');
+  if (cowRun) cowRun.addEventListener('click', function () {
+    var log = document.getElementById('cow-log');
+    if (log) log.insertAdjacentHTML('afterbegin',
+      '<div class="mdw-cow-line"><span class="mdw-log-time">' + nowTime() + '</span> 已下发小游戏任务（原型：未接入 MaaCore）</div>');
+  });
+
+  // 导出按钮反馈
+  ['#o-export-btn', '#d-export-btn'].forEach(function (sel) {
+    var b = el.querySelector(sel);
+    if (b) b.addEventListener('click', function () {
+      b.textContent = '已导出';
+      setTimeout(function () { b.textContent = '导出'; }, 1200);
+    });
   });
 }
 
