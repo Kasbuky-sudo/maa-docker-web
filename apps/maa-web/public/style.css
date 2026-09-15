@@ -25,6 +25,10 @@ body {
 /* keep navbar usable on top of scrolling content (official base is sticky) */
 .app-navbar-wrap nav.app-navbar { position: sticky; top: 0; max-height: 100vh; }
 
+/* topbar-mobile exists only for the <760px overlay mode; the official dist
+   ships no rule for it, so without this it leaks into the desktop navbar */
+.app-navbar-topbar-mobile { display: none; }
+
 /* content column */
 .app-page-container {
   flex: 1 1 auto;
@@ -34,10 +38,32 @@ body {
 }
 
 @media (max-width: 760px) {
-  /* small screens: official overlay behavior (untouched) */
+  /* small screens: official overlay behavior; show the mobile topbar instead */
   body { display: block; }
+  /* official mobile media sets .app-navbar-wrap{position:unset} but leaves
+     height:100vh — it would push the page down a full screen. The nav itself
+     is position:fixed there, so the empty wrap can safely collapse. */
+  .app-navbar-wrap { height: 0; overflow: visible; }
+  .app-navbar-topbar-mobile {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 8;
+    align-items: center;
+    gap: 10px;
+    height: 52px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--mdw-border);
+    background: var(--color-navbar-bg-default, var(--color-background-default));
+  }
   .app-page-container { padding-top: 56px; }
 }
+
+/* localize the official theme-switch label (after windows-ui.min.css so it wins) */
+.app-navbar-theme-switch input+.app-navbar-theme-switch-icon::after { content: "昼间模式"; }
+.app-navbar-theme-switch input:checked+.app-navbar-theme-switch-icon::after { content: "夜间模式"; }
 
 /* ---- cards ---- */
 .mdw-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin: 16px 0; }
