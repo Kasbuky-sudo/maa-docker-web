@@ -9,7 +9,11 @@
   --mdw-hover: var(--color-ui-hover-default);
 }
 
-/* ---- app shell: windows-ui ships components, not an app shell ---- */
+/* ---- app shell: use windows-ui's own sticky navbar spec ----
+   Official base: .app-navbar-wrap{position:sticky;height:100vh},
+   nav{width:var(--width-navbar-expanded)}, .collapsed -> icon rail
+   (var(--width-navbar-collapsed)). The official toggler JS toggles
+   .collapsed on desktop and .collapsed-float (overlay) on mobile. */
 body {
   display: flex;
   min-height: 100vh;
@@ -17,37 +21,9 @@ body {
   color: var(--color-text-default);
 }
 
-/* sidebar: permanently visible on desktop */
-.app-navbar-wrap {
-  position: sticky;
-  top: 0;
-  flex: 0 0 240px;
-  height: 100vh;
-  overflow-y: auto;
-  border-right: 1px solid var(--mdw-border);
-  background: var(--color-navbar-bg-default, var(--color-background-default));
-}
-.app-navbar-wrap nav.app-navbar {
-  position: relative;
-  transform: none !important;
-  width: 100%;
-  height: 100%;
-  background: transparent;
-}
-.app-navbar-topbar-mobile { display: none !important; }
-
-/* sidebar collapse (desktop) */
-body.mdw-nav-collapsed .app-navbar-wrap { display: none; }
-#mdw-navtoggle {
-  position: fixed;
-  top: 12px;
-  right: 14px;
-  z-index: 30;
-  width: 38px;
-  height: 38px;
-  padding: 0;
-  font-size: 17px;
-}
+.app-navbar-wrap { flex: 0 0 auto; }
+/* keep navbar usable on top of scrolling content (official base is sticky) */
+.app-navbar-wrap nav.app-navbar { position: sticky; top: 0; max-height: 100vh; }
 
 /* content column */
 .app-page-container {
@@ -58,19 +34,8 @@ body.mdw-nav-collapsed .app-navbar-wrap { display: none; }
 }
 
 @media (max-width: 760px) {
-  /* small screens: windows-ui official overlay behavior */
+  /* small screens: official overlay behavior (untouched) */
   body { display: block; }
-  #mdw-navtoggle { display: none; }
-  .app-navbar-wrap {
-    position: fixed;
-    flex: none;
-    width: 240px;
-    z-index: 5;
-    transform: translateX(-100%);
-    transition: transform .2s ease-in-out;
-  }
-  .app-navbar-wrap.collapsed-float { transform: translateX(0); }
-  .app-navbar-topbar-mobile { display: flex !important; }
   .app-page-container { padding-top: 56px; }
 }
 
@@ -135,6 +100,13 @@ h2.mdw-title { margin: 8px 0 4px; }
 /* windows-ui accordion panel has fixed 500px height when open; let it fit content */
 .app-accordion-panel.show { height: auto; }
 .mdw-time { width: 120px; }
+
+/* ---- 功能对照页 ---- */
+.mdw-sec-title { margin: 22px 0 8px; font-size: 16px; font-weight: 500; }
+.mdw-feat-table td { font-size: 14px; }
+.mdw-feat-note { opacity: .7; font-size: 12.5px; max-width: 460px; }
+.mdw-pill.warn { background: #9d5d00; }
+[data-theme="dark"] .mdw-pill.warn { background: #c78c37; }
 
 @media (max-width: 760px) {
   .mdw-task-layout { flex-direction: column; }

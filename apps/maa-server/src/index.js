@@ -220,6 +220,8 @@ const routes = {
     return { schedule: clean };
   },
 
+  'GET /api/features/parity': () => require('./feature-parity.json'),
+
   'GET /api/logs': (req, url) => {
     const limit = Math.min(Number(url.searchParams.get('limit')) || 200, 2000);
     return { entries: logger.recent(limit), files: logger.logFiles(), logDir: LOG_DIR };

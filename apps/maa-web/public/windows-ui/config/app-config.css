@@ -9,3 +9,7 @@ body {
 [data-theme="dark"] ::selection {
   background-color: #2E517E;
 }
+
+/* localize the official theme-switch label (official content hooks) */
+input+.app-navbar-theme-switch-icon::after { content: "昼间模式"; }
+input:checked+.app-navbar-theme-switch-icon::after { content: "夜间模式"; }

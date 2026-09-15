@@ -364,6 +364,32 @@ async function pageSettings(el) {
   });
 }
 
+// ----------------------------------------------------------- 功能对照页
+async function pageFeatures(el) {
+  const data = await api.get('/api/features/parity');
+  const badge = { full: ['ok', '已实现'], partial: ['warn', '部分'], none: ['bad', '未实现'], na: ['', '不适用'] };
+  const count = { full: 0, partial: 0, none: 0, na: 0 };
+  for (const s of data.sections) for (const it of s.items) count[it.status]++;
+  el.innerHTML = `
+    <h2 class="mdw-title">功能对照 · MAA 桌面端 vs 本 Web</h2>
+    <p class="mdw-muted">对照基准：${esc(data.upstream)}。数据由服务端 feature-parity.json 驱动，随开发更新。</p>
+    <div class="mdw-cards">
+      <div class="mdw-card"><h3>已实现</h3><div class="mdw-value">${count.full}</div></div>
+      <div class="mdw-card"><h3>部分实现</h3><div class="mdw-value">${count.partial}</div></div>
+      <div class="mdw-card"><h3>未实现</h3><div class="mdw-value">${count.none}</div></div>
+      <div class="mdw-card"><h3>桌面端专属</h3><div class="mdw-value">${count.na}</div></div>
+    </div>
+    ${data.sections.map((sec) => `
+      <h3 class="mdw-sec-title">${esc(sec.module)}</h3>
+      <div class="app-table-view-container"><table class="app-table-view mdw-feat-table">
+        <thead><tr><th>功能</th><th>状态</th><th>说明</th></tr></thead>
+        <tbody>${sec.items.map((it) => {
+          const [cls, label] = badge[it.status] || ['', it.status];
+          return `<tr><td>${esc(it.name)}</td><td><span class="mdw-pill ${cls}">${label}</span></td><td class="mdw-feat-note">${esc(it.note || '')}</td></tr>`;
+        }).join('')}</tbody>
+      </table></div>`).join('')}`;
+}
+
 // ----------------------------------------------------------- Runtime / 日志 / 关于
 async function pageRuntime(el) {
   const render = (rt) => {
@@ -462,21 +488,21 @@ async function pageAbout(el) {
     </div>`;
 }
 
-// sidebar collapse (persisted)
+// sidebar: follow the official windows-ui spec — the navbar toggler toggles
+// .collapsed (icon rail) on desktop / .collapsed-float (overlay) on mobile.
+// We only persist the official class across reloads.
 (function () {
-  try {
-    if (localStorage.getItem('mdw-nav') === 'collapsed') document.body.classList.add('mdw-nav-collapsed');
-  } catch { /* private mode */ }
-  const btn = document.getElementById('mdw-navtoggle');
-  if (btn) btn.addEventListener('click', () => {
-    const collapsed = document.body.classList.toggle('mdw-nav-collapsed');
-    try { localStorage.setItem('mdw-nav', collapsed ? 'collapsed' : 'open'); } catch { /* ignore */ }
-  });
+  const wrap = document.getElementById('NavBarMain');
+  if (!wrap) return;
+  try { if (localStorage.getItem('mdw-nav') === 'collapsed') wrap.classList.add('collapsed'); } catch { /* private mode */ }
+  new MutationObserver(() => {
+    try { localStorage.setItem('mdw-nav', wrap.classList.contains('collapsed') ? 'collapsed' : 'open'); } catch { /* ignore */ }
+  }).observe(wrap, { attributes: true, attributeFilter: ['class'] });
 })();
 
 // ----------------------------------------------------------- router
 const pages = {
-  tasks: pageTasks, schedule: pageSchedule, settings: pageSettings,
+  tasks: pageTasks, schedule: pageSchedule, settings: pageSettings, features: pageFeatures,
   runtime: pageRuntime, logs: pageLogs, about: pageAbout,
 };
 
