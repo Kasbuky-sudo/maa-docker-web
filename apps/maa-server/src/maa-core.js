@@ -9,6 +9,7 @@ const runtime = require('./runtime');
 
 let lib = null;
 let fns = null;
+let cbProto = null;
 
 function available() {
   try {
@@ -28,17 +29,34 @@ function load() {
   return lib;
 }
 
+// koffi.register needs the proto *object*, not its name
+function callbackProto() {
+  const koffi = load();
+  if (!cbProto) cbProto = koffi.proto('AsstApiCallback', 'void', ['int32_t', 'const char *', 'void *']);
+  return cbProto;
+}
+
+// koffi 2.x register(fn, '<Proto> *' | pointer(proto)); wrap both attempts here
+function registerCallback(fn) {
+  const koffi = load();
+  callbackProto();
+  try {
+    return koffi.register(fn, 'AsstApiCallback *');
+  } catch {
+    return koffi.register(fn, koffi.pointer(cbProto));
+  }
+}
+
 function funcs() {
   if (fns) return fns;
   const koffi = load();
-  // void(ASST_CALL*)(AsstMsgId msg, const char* details_json, void* custom_arg)
-  koffi.proto('AsstApiCallback', 'void', ['int32_t', 'const char *', 'void *']);
+  callbackProto(); // register named proto before the signature referencing it
   const L = lib;
   fns = {
     getVersion: L.func('const char *AsstGetVersion()'),
     setUserDir: L.func('uint8_t AsstSetUserDir(const char *path)'),
     loadResource: L.func('uint8_t AsstLoadResource(const char *path)'),
-    createEx: L.func('void *AsstCreateEx(AsstApiCallback callback, void *custom_arg)'),
+    createEx: L.func('void *AsstCreateEx(AsstApiCallback *callback, void *custom_arg)'),
     destroy: L.func('void AsstDestroy(void *handle)'),
     appendTask: L.func('int32_t AsstAppendTask(void *handle, const char *type, const char *params)'),
     setTaskParams: L.func('uint8_t AsstSetTaskParams(void *handle, int32_t id, const char *params)'),
@@ -51,4 +69,4 @@ function funcs() {
   return fns;
 }
 
-module.exports = { available, funcs };
+module.exports = { available, funcs, callbackProto, registerCallback };

@@ -203,8 +203,7 @@ async function start(selectedTaskIds) {
     return { task: t, params: buildParams(t.taskType, { ...defaults, ...(saved[id] || {}) }) };
   });
 
-  const koffi = require('koffi');
-  const cbRef = koffi.register('AsstApiCallback', (msg, details, arg) => onCallback(msg, details, arg));
+  const cbRef = maaCore.registerCallback((msg, details, arg) => onCallback(msg, details, arg));
 
   state = { phase: 'loading', detail: '加载资源中', tasks: ids, startedAt: Date.now(), finishedAt: null };
   seq += 1;
