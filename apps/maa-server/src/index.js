@@ -144,8 +144,16 @@ const routes = {
     const validIds = new Set(catalog.tasks.map((t) => t.id));
     const clean = {};
     for (const [taskId, opts] of Object.entries(body)) {
+      if (taskId === '_meta') continue;
       if (!validIds.has(taskId) || typeof opts !== 'object' || Array.isArray(opts)) continue;
       clean[taskId] = opts;
+    }
+    // queue-level options (post action, etc.)
+    if (body._meta && typeof body._meta === 'object' && !Array.isArray(body._meta)) {
+      const meta = {};
+      const postActions = ['None', 'ExitGame', 'ExitEmulator', 'ExitMAA', 'Shutdown', 'Sleep', 'Hibernate'];
+      if (postActions.includes(body._meta.postAction)) meta.postAction = body._meta.postAction;
+      if (Object.keys(meta).length) clean._meta = meta;
     }
     const file = path.join(config.CONFIG_DIR(), 'tasks.json');
     require('node:fs').writeFileSync(file, JSON.stringify(clean, null, 2) + '\n', 'utf8');
@@ -162,6 +170,8 @@ const routes = {
   'GET /api/runner/status': () => runner.snapshot(),
 
   'POST /api/runner/stop': () => runner.stop(),
+
+  'POST /api/runner/test-connect': () => runner.testConnect(),
 
   // Connection settings (connection.json, consumed by the execution pipeline)
   'GET /api/connection': () => {
@@ -318,7 +328,7 @@ logger.on('entry', (entry) => {
 function start() {
   config.load();
   logger.setLevel(config.load().logLevel);
-  logger.info('server', `MAA Docker Web server ${PACKAGE_VERSION} starting`);
+  logger.info('server', `MAA for NAS server ${PACKAGE_VERSION} starting`);
   const ok = runtime.init();
   if (ok) {
     logger.info('server', `MAA ${runtime.MAA_VERSION} runtime found in data volume`);

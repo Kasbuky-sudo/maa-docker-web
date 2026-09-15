@@ -21,7 +21,7 @@ Base URL：`/api`（由 maa-web 反代到 maa-server）。所有响应为 JSON�
 
 ### GET /api/config
 ```json
-{ "serverName": "MAA Docker Web", "logLevel": "info", "timezone": "Asia/Shanghai", "autoFetchRuntime": true }
+{ "serverName": "MAA for NAS", "logLevel": "info", "timezone": "Asia/Shanghai", "autoFetchRuntime": true }
 ```
 
 ### PUT /api/config

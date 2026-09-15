@@ -40,6 +40,8 @@ T = {
     "执行/停止（AsstStart/AsstStop）": ("Start / stop (AsstStart, AsstStop)", "実行・停止 (AsstStart, AsstStop)", "실행/정지 (AsstStart, AsstStop)"),
     "原生回调日志（任务链/子任务事件）": ("Native callback logs (task chain / subtask events)", "ネイティブログ（タスクチェーン・サブタスク）", "네이티브 콜백 로그 (태스크 체인/서브태스크)"),
     "执行截图 / 实时画面": ("Screencap / live view", "スクリーンショット・ライブ画面", "스크린샷 / 실시간 화면"),
+    "连接测试（AsstAsyncConnect 探活）": ("Connection test (AsstAsyncConnect probe)", "接続テスト（AsstAsyncConnect 探活）", "연결 테스트 (AsstAsyncConnect 확인)"),
+    "一键长草工作台（三栏 + 运行实况 + 状态栏）": ("One-click idle workbench (3 columns + live panel + status bar)", "一括放置ワークベンチ（3 カラム + 実況 + ステータスバー）", "원클릭 방치 워크벤치 (3열 + 실시간 패널 + 상태 표시줄)"),
     # tasks
     "开始唤醒（账号切换/启动客户端）": ("StartUp (account switch / launch client)", "起動（アカウント切替・クライアント起動）", "시작 (계정 전환/클라이언트 실행)"),
     "理智作战": ("Fight (sanity farming)", "理性消費", "이성 소모"),

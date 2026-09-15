@@ -1,11 +1,12 @@
-/* MAA Docker Web — SPA (hash router + REST + WebSocket)
-   UI rules: only windows-ui components (app-checkbox/app-switch/app-select-menu/
-   app-input-text/app-accordion/app-alert-bar/app-table-view/app-btn). */
+/* MAA for NAS — web UI
+   Components: windows-ui (official dist) only. Shell = topbar + icon rail +
+   workbench columns + live panel + statusbar.
+   Feature data: /api/features/parity (same JSON as the READMEs). */
 'use strict';
 
 const $page = document.getElementById('page');
 const api = {
-  async get(p) { const r = await fetch(p); if (!r.ok) throw new Error((await r.json()).error || r.status); return r.json(); },
+  async get(p) { const r = await fetch(p); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status); return r.json(); },
   async send(p, method, body) {
     const r = await fetch(p, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
     const j = await r.json().catch(() => ({}));
@@ -14,21 +15,14 @@ const api = {
   },
 };
 
-function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 function pill(status) {
   const cls = status === 'ready' || status === 'healthy' ? 'ok' : status === 'error' ? 'bad' : '';
   return `<span class="mdw-pill ${cls}">${esc(status)}</span>`;
 }
-function bytes(n) {
-  if (!n && n !== 0) return '—';
-  const u = ['B', 'KB', 'MB', 'GB']; let i = 0; let v = n;
-  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
-  return `${v.toFixed(1)} ${u[i]}`;
-}
 function alertBar(kind, msg, id) {
   return `<div class="app-alert-bar ${kind}" ${id ? `id="${id}"` : ''}><span>${esc(msg)}</span></div>`;
 }
-// windows-ui accordion: header toggles aria-expanded + panel.show
 function accordion(title, inner, open) {
   return `<div class="app-accordion">
     <button type="button" class="app-accordion-header" aria-expanded="${open ? 'true' : 'false'}">
@@ -46,15 +40,148 @@ function bindAccordions(root) {
     });
   });
 }
-function switchCtl(id, checked, on = '开启', off = '关闭') {
+function switchCtl(id, checked, on = '已启用', off = '未启用') {
   return `<label class="app-switch"><input type="checkbox" id="${id}" ${checked ? 'checked' : ''}/><span class="app-switch-view"></span><span class="app-switch-label" data-on="${on}" data-off="${off}"></span></label>`;
 }
+function selectCtl(id, choices, value) {
+  return `<div class="app-select-menu mdw-row-ctl"><select id="${id}">${choices.map((c) =>
+    `<option value="${esc(String(c.value))}" ${String(c.value) === String(value) ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select></div>`;
+}
+function stdRow(label, desc, ctl) {
+  return `<div class="mdw-row"><div class="mdw-row-l"><div class="mdw-row-label">${esc(label)}</div>${desc ? `<div class="mdw-row-desc">${esc(desc)}</div>` : ''}</div><div class="mdw-row-r">${ctl}</div></div>`;
+}
 
-// ----------------------------------------------------------- 任务页（MAA 主界面）
+// ----------------------------------------------------------- shell (topbar / statusbar / live stats)
+const SHELL = { version: {}, runner: { phase: 'idle', detail: '' }, connection: {} };
+const LOGS = [];
+let liveFollow = true;
+
+const PHASE_LABEL = {
+  idle: '空闲 · 等待执行', loading: '加载资源中', connecting: '连接设备中',
+  running: '执行中', stopping: '停止中', done: '已完成', error: '出错',
+};
+
+function renderShell() {
+  const v = SHELL.version; const st = SHELL.runner || {};
+  const tb = document.getElementById('tb-version');
+  if (tb) tb.textContent = v.serviceVersion ? `v${v.serviceVersion} · MAA ${v.maaVersion || '—'}` : '';
+  const chip = document.getElementById('tb-device');
+  if (chip) {
+    const addr = (st.connection && st.connection.address) || '';
+    const ok = !!st.connected;
+    chip.className = `app-btn mdw-chip ${ok ? 'mdw-chip-ok' : ''}`;
+    chip.innerHTML = `<span class="mdw-dot ${ok ? 'ok' : ''}"></span>${ok ? '设备已连接' : (addr ? '设备未连接' : '未配置设备')}`;
+  }
+  const sbL = document.getElementById('sb-left');
+  if (sbL) {
+    const addr = (st.connection && st.connection.address) || '未填写设备地址';
+    sbL.innerHTML = `<span class="mdw-dot ${st.connected ? 'ok' : ''}"></span>${st.connected ? '设备已连接' : '设备未连接'} <span class="mdw-muted">${esc(addr)}</span>`;
+  }
+  const sbR = document.getElementById('sb-right');
+  if (sbR) sbR.textContent = `${PHASE_LABEL[st.phase] || st.phase}${st.detail ? ' · ' + st.detail : ''}`;
+  const live = document.querySelector('.mdw-live');
+  if (live) {
+    const set = (sel, text) => { const el = live.querySelector(sel); if (el) el.textContent = text; };
+    set('[data-live="state"]', PHASE_LABEL[st.phase] || st.phase || '—');
+    set('[data-live="device"]', (st.connection && st.connection.address) || '—');
+    set('[data-live="maa"]', st.maaVersion || (st.maa && st.maa.ok ? '已就绪' : '未就绪'));
+  }
+  // keep the workbench "ready" card in sync (it is re-rendered only on interaction)
+  const ready = document.querySelector('.mdw-ready');
+  if (ready) {
+    const addr = (st.connection && st.connection.address) || '';
+    const ok = !!(addr && st.maa && st.maa.ok);
+    ready.classList.toggle('ok', ok);
+    ready.classList.toggle('warn', !ok);
+    const state = ready.querySelector('.mdw-ready-state');
+    if (state) state.textContent = PHASE_LABEL[st.phase] || st.phase || '—';
+    const title = ready.querySelector('.mdw-ready-title');
+    if (title) title.textContent = ok ? '准备就绪' : '尚未就绪';
+    const sub = ready.querySelector('.mdw-ready-sub');
+    if (sub) {
+      const n = document.querySelectorAll('.mdw-qi-check:checked').length;
+      sub.textContent = `${addr || '未配置设备'} · ${n} 个任务已启用 · MAA ${st.maaVersion || '—'}`;
+    }
+  }
+}
+
+async function refreshShell() {
+  try { SHELL.runner = await api.get('/api/runner/status'); } catch { /* keep last */ }
+  renderShell();
+}
+
+function timelineItem(entry) {
+  const t = String(entry.timestamp || '').slice(11, 19);
+  return `<div class="mdw-tl-item lv-${esc(entry.level)}"><span class="mdw-tl-dot"></span><div class="mdw-tl-body">
+    <div class="mdw-tl-time">${esc(t)}</div>
+    <div class="mdw-tl-text">${esc(entry.message)}</div>
+    <div class="mdw-tl-src">${esc(entry.source || '')}</div></div></div>`;
+}
+
+function pushLog(entry) {
+  LOGS.push(entry);
+  if (LOGS.length > 500) LOGS.shift();
+  const tl = document.getElementById('timeline');
+  if (!tl) return;
+  tl.insertAdjacentHTML('beforeend', timelineItem(entry));
+  while (tl.children.length > 200) tl.removeChild(tl.firstChild);
+  if (liveFollow) tl.scrollTop = tl.scrollHeight;
+}
+
+function connectLogStream() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  let retry = 0;
+  const open = () => {
+    const ws = new WebSocket(`${proto}://${location.host}/api/ws`);
+    ws.onmessage = (ev) => {
+      try {
+        const e = JSON.parse(ev.data);
+        if (e.type === 'log') pushLog(e);
+      } catch { /* ignore */ }
+    };
+    ws.onopen = () => { retry = 0; };
+    ws.onclose = () => { retry = Math.min(retry + 1, 6); setTimeout(open, 1000 * 2 ** retry); };
+  };
+  open();
+}
+
+async function testConnection(btn) {
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = '测试中…';
+  try {
+    const r = await api.send('/api/runner/test-connect', 'POST');
+    pushLog({
+      timestamp: new Date().toISOString(), level: r.ok ? 'info' : 'warn', source: 'runner',
+      message: r.ok ? `连接测试成功 ${r.address}（${r.ms} ms）` : `连接测试失败：${r.error}`,
+    });
+    flashSaved(r.ok ? `连接成功（${r.ms} ms）` : `连接失败：${r.error}`, !r.ok);
+  } catch (e) {
+    flashSaved(e.message, true);
+  }
+  btn.disabled = false; btn.textContent = old;
+  refreshShell();
+}
+
+async function bootShell() {
+  try { SHELL.version = await api.get('/api/version'); } catch { /* ignore */ }
+  const conn = await api.get('/api/connection').catch(() => ({ connection: {} }));
+  SHELL.connection = conn.connection || {};
+  renderShell();
+  await refreshShell();
+  setInterval(refreshShell, 3000);
+  const btn = document.getElementById('tb-connect');
+  if (btn) btn.addEventListener('click', () => testConnection(btn));
+  const logs = await api.get('/api/logs?limit=80').catch(() => ({ entries: [] }));
+  for (const e of logs.entries || []) pushLog(e);
+  connectLogStream();
+}
+
+// ----------------------------------------------------------- 任务页（一键长草工作台）
 let CATALOG = null;
-let TCONF = {};       // { taskId: { optId: value } }
-let SELECTED = null;  // selected task id
+let TCONF = {};      // { taskId: {optId: value}, _meta: {postAction} }
+let SELECTED = null;
 let saveTimer = null;
+let activeTab = 'basic';
 
 function defaultsFor(task) {
   const o = {};
@@ -76,116 +203,193 @@ function flashSaved(text, bad) {
   const el = document.getElementById('save-ind');
   if (el) { el.textContent = text; el.className = 'mdw-muted' + (bad ? ' mdw-error' : ''); }
 }
+function choiceLabel(task, optId, value) {
+  const opt = (task.options || []).find((o) => o.id === optId) || {};
+  const choices = opt.choices || CATALOG[opt.choicesFrom] || [];
+  const hit = choices.find((c) => String(c.value) === String(value));
+  return hit ? hit.label : String(value);
+}
 
-function optionRow(task, opt) {
+// 队列条目的一行摘要（对齐桌面端：关卡 · 策略）
+function taskSummary(task) {
+  const o = optsFor(task.id);
+  switch (task.id) {
+    case 'fight': {
+      const stage = o.stage ? o.stage : '当前/上次';
+      const med = Number(o.medicine) > 0 ? `理智药 ${o.medicine}` : '吃完至自然恢复上限';
+      return `${stage} · ${med}`;
+    }
+    case 'infrast': {
+      const names = (o.facility || []).map((v) => choiceLabel(task, 'facility', v));
+      return names.length ? `${names.slice(0, 3).join('、')}${names.length > 3 ? ' 等' : ''}` : '未选择设施';
+    }
+    case 'award': {
+      const on = ['award', 'mail', 'recruit'].filter((k) => o[k]).length;
+      return on ? `日常、邮件及单抽（${on} 项）` : '未启用子项';
+    }
+    case 'recruit': {
+      const conf = (o.confirm || []).map((v) => `${v} 星`).join(' / ');
+      return conf ? `仅确认 ${conf} 标签` : '未设置确认星级';
+    }
+    case 'mall': {
+      const first = String(o.buy_first || '').split(/[,，;；]/)[0] || '—';
+      return `优先购买 ${first}`;
+    }
+    case 'roguelike':
+      return `${choiceLabel(task, 'theme', o.theme)} · ${choiceLabel(task, 'mode', o.mode)}`;
+    case 'reclamation':
+      return choiceLabel(task, 'mode', o.mode);
+    default:
+      return task.description || '';
+  }
+}
+
+function optionRowHtml(task, opt) {
   const val = optsFor(task.id)[opt.id];
-  const id = `opt-${task.id}-${opt.id}`;
+  const id = `o-${task.id}-${opt.id}`;
+  const desc = opt.help || opt.placeholder || '';
   let ctl = '';
   if (opt.type === 'switch') {
     ctl = switchCtl(id, !!val);
   } else if (opt.type === 'select') {
-    const choices = opt.choices || CATALOG[opt.choicesFrom] || [];
-    ctl = `<div class="app-select-menu mdw-fill"><select id="${id}">${choices.map((c) =>
-      `<option value="${esc(String(c.value))}" ${String(c.value) === String(val) ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select></div>`;
+    ctl = selectCtl(id, opt.choices || CATALOG[opt.choicesFrom] || [], val);
   } else if (opt.type === 'counter') {
-    ctl = `<div class="mdw-stepper"><button type="button" class="app-btn mdw-step" data-step="-1">−</button>
+    ctl = `<div class="mdw-stepper"><button type="button" class="app-btn mdw-step" data-step="-1" data-for="${id}">−</button>
       <input type="number" class="app-input-text" id="${id}" value="${esc(String(val))}" min="${opt.min ?? 0}" max="${opt.max ?? 9999}"/>
-      <button type="button" class="app-btn mdw-step" data-step="1">＋</button></div>`;
+      <button type="button" class="app-btn mdw-step" data-step="1" data-for="${id}">＋</button></div>`;
   } else if (opt.type === 'multi') {
-    const arr = Array.isArray(val) ? val : [];
+    const arr = (Array.isArray(val) ? val : []).map(String);
     ctl = `<div class="mdw-multi">${(opt.choices || []).map((c) =>
-      `<label class="mdw-check"><input type="checkbox" class="app-checkbox mdw-multi-item" data-opt="${id}" data-val="${esc(String(c.value))}" ${arr.map(String).includes(String(c.value)) ? 'checked' : ''}/><span>${esc(c.label)}</span></label>`).join('')}</div>`;
-  } else { // text
-    ctl = `<input type="text" class="app-input-text mdw-fill" id="${id}" value="${esc(val ?? '')}" placeholder="${esc(opt.placeholder || '')}"/>`;
+      `<label class="mdw-check"><input type="checkbox" class="app-checkbox mdw-multi-item" data-task="${task.id}" data-opt="${opt.id}" data-val="${esc(String(c.value))}" ${arr.includes(String(c.value)) ? 'checked' : ''}/><span>${esc(c.label)}</span></label>`).join('')}</div>`;
+  } else {
+    ctl = `<input type="text" class="app-input-text mdw-row-ctl" id="${id}" value="${esc(val ?? '')}" placeholder="${esc(opt.placeholder || '')}"/>`;
   }
-  return `<div class="mdw-opt-row">
-    <div class="mdw-opt-label">${esc(opt.label)}</div>
-    <div class="mdw-opt-ctl">${ctl}</div>
-    ${opt.help ? `<div class="mdw-opt-help">${esc(opt.help)}</div>` : ''}
-  </div>`;
+  return stdRow(opt.label, desc, ctl);
 }
 
-function readOptInto(task, opt, value) {
-  TCONF[task.id] = TCONF[task.id] || {};
-  TCONF[task.id][opt.id] = value;
-}
-
-function renderTaskDetail(el) {
-  const detail = el.querySelector('#task-detail');
-  const task = CATALOG.tasks.find((x) => x.id === SELECTED);
-  if (!task) { detail.innerHTML = '<p class="mdw-muted">在左侧选择一个任务查看选项。</p>'; return; }
-  detail.innerHTML = `
-    <h3 class="mdw-task-name">${esc(task.name)}</h3>
-    <p class="mdw-muted">${esc(task.description || '')}</p>
-    <div class="mdw-opts">${(task.options || []).map((o) => optionRow(task, o)).join('')}</div>`;
-  // bind controls -> state
-  for (const opt of task.options || []) {
-    const id = `opt-${task.id}-${opt.id}`;
-    const node = detail.querySelector(`#${id}`);
-    if (!node) continue;
-    if (opt.type === 'switch') {
-      node.addEventListener('change', () => { readOptInto(task, opt, node.checked); saveTasksConfig(); });
-    } else if (opt.type === 'select') {
-      node.addEventListener('change', () => {
-        const raw = node.value;
-        const match = (opt.choices || CATALOG[opt.choicesFrom] || []).find((c) => String(c.value) === raw);
-        readOptInto(task, opt, match ? match.value : raw);
-        saveTasksConfig();
-      });
-    } else if (opt.type === 'counter') {
-      node.addEventListener('change', () => { readOptInto(task, opt, Number(node.value) || 0); saveTasksConfig(); });
-      detail.querySelectorAll(`.mdw-step[data-for="${id}"]`).forEach((b) => {});
-    } else if (opt.type === 'text') {
-      node.addEventListener('input', () => { readOptInto(task, opt, node.value); saveTasksConfig(); });
-    } else if (opt.type === 'multi') {
-      detail.querySelectorAll(`.mdw-multi-item[data-opt="${id}"]`).forEach((cb) => {
-        cb.addEventListener('change', () => {
-          const cur = new Set((optsFor(task.id)[opt.id] || []).map(String));
-          if (cb.checked) cur.add(cb.dataset.val); else cur.delete(cb.dataset.val);
-          const match = (opt.choices || []).filter((c) => cur.has(String(c.value))).map((c) => c.value);
-          readOptInto(task, opt, match);
-          saveTasksConfig();
-        });
-      });
-    }
-  }
-  // steppers
-  detail.querySelectorAll('.mdw-step').forEach((b) => {
-    b.addEventListener('click', () => {
-      const input = b.parentElement.querySelector('input');
-      const opt = (task.options || []).find((o) => `opt-${task.id}-${o.id}` === input.id);
-      const step = Number(b.dataset.step);
-      let v = (Number(input.value) || 0) + step;
-      if (opt) { if (opt.min != null) v = Math.max(opt.min, v); if (opt.max != null) v = Math.min(opt.max, v); }
-      input.value = v;
-      readOptInto(task, opt, v);
-      saveTasksConfig();
-    });
-  });
-}
-
-let runPoll = null;
-function pollRunStatus(out) {
-  clearInterval(runPoll);
-  const tick = async () => {
-    let st;
-    try { st = await api.get('/api/runner/status'); } catch { clearInterval(runPoll); return; }
-    if (st.phase === 'idle' || st.phase === 'done' || st.phase === 'error') {
-      clearInterval(runPoll);
-      const kind = st.phase === 'error' ? 'alert-bar-danger' : 'alert-bar-success';
-      if (st.phase !== 'idle') out.innerHTML = alertBar(kind, `执行结束：${st.detail || st.phase}`);
-      return;
-    }
-    out.innerHTML = `<div class="mdw-hstack">
-      <div class="app-progress-container mdw-progress-fit"><div class="app-progress-bar"><span class="indeterminate"></span></div></div>
-      <span class="mdw-muted">${esc(st.detail || st.phase)} · MAA ${esc(st.maaVersion || '')}</span>
-      <button type="button" class="app-btn" id="btn-stoprun">停止</button></div>`;
-    out.querySelector('#btn-stoprun').onclick = async () => {
-      try { await api.send('/api/runner/stop', 'POST'); } catch { /* ignore */ }
-    };
+function bindTaskOptions(root, task) {
+  const write = (opt, v) => {
+    TCONF[task.id] = TCONF[task.id] || {};
+    TCONF[task.id][opt.id] = v;
+    saveTasksConfig();
+    refreshQueueSummary(task.id);
   };
-  tick();
-  runPoll = setInterval(tick, 2500);
+  for (const opt of task.options || []) {
+    const id = `o-${task.id}-${opt.id}`;
+    const node = root.querySelector(`#${id}`);
+    if (!node) continue;
+    if (opt.type === 'switch') node.addEventListener('change', () => write(opt, node.checked));
+    else if (opt.type === 'select') node.addEventListener('change', () => {
+      const hit = (opt.choices || CATALOG[opt.choicesFrom] || []).find((c) => String(c.value) === node.value);
+      write(opt, hit ? hit.value : node.value);
+    });
+    else if (opt.type === 'counter') node.addEventListener('change', () => write(opt, Number(node.value) || 0));
+    else if (opt.type === 'text') node.addEventListener('input', () => write(opt, node.value));
+  }
+  root.querySelectorAll('.mdw-step').forEach((b) => b.addEventListener('click', () => {
+    const input = root.querySelector(`#${b.dataset.for}`);
+    const opt = (task.options || []).find((o) => `o-${task.id}-${o.id}` === input.id);
+    if (!opt) return;
+    let v = (Number(input.value) || 0) + Number(b.dataset.step);
+    if (opt.min != null) v = Math.max(opt.min, v);
+    if (opt.max != null) v = Math.min(opt.max, v);
+    input.value = v;
+    write(opt, v);
+  }));
+  root.querySelectorAll('.mdw-multi-item').forEach((cb) => cb.addEventListener('change', () => {
+    const opt = (task.options || []).find((o) => o.id === cb.dataset.opt);
+    if (!opt) return;
+    const cur = new Set((optsFor(task.id)[opt.id] || []).map(String));
+    if (cb.checked) cur.add(cb.dataset.val); else cur.delete(cb.dataset.val);
+    write(opt, (opt.choices || []).filter((c) => cur.has(String(c.value))).map((c) => c.value));
+  }));
+}
+
+function refreshQueueSummary(taskId) {
+  const el = document.querySelector(`.mdw-qi[data-task="${taskId}"] .mdw-qi-sub`);
+  const task = CATALOG.tasks.find((t) => t.id === taskId);
+  if (el && task) el.textContent = taskSummary(task);
+}
+
+function renderMain(wrap) {
+  const task = CATALOG.tasks.find((t) => t.id === SELECTED);
+  const st = SHELL.runner || {};
+  const selected = [...wrap.closest('.mdw-workbench').querySelectorAll('.mdw-qi-check:checked')].map((c) => c.dataset.task);
+  const ready = !!((st.connection && st.connection.address) && st.maa && st.maa.ok);
+  wrap.innerHTML = `
+    <div class="mdw-crumb">首页 / 一键长草</div>
+    <h1 class="mdw-h1">一键长草</h1>
+    <div class="mdw-ready ${ready ? 'ok' : 'warn'}">
+      <div class="mdw-ready-l">
+        <div class="mdw-ready-state">${esc(PHASE_LABEL[st.phase] || st.phase)}</div>
+        <div class="mdw-ready-title">${ready ? '准备就绪' : '尚未就绪'}</div>
+        <div class="mdw-ready-sub">${esc((st.connection && st.connection.address) || '未配置设备')} · ${selected.length} 个任务已启用 · MAA ${esc(st.maaVersion || '—')}</div>
+      </div>
+      <div class="mdw-ready-r"><button type="button" class="app-btn mdw-btn-primary" id="btn-run2">立即执行</button></div>
+    </div>
+    <div class="mdw-tabs">
+      <button type="button" class="mdw-tab ${activeTab === 'basic' ? 'active' : ''}" data-tab="basic">常规设置</button>
+      <button type="button" class="mdw-tab ${activeTab === 'adv' ? 'active' : ''}" data-tab="adv">高级设置</button>
+    </div>
+    ${activeTab === 'basic' ? `
+      <div class="mdw-group">
+        <div class="mdw-group-head"><div class="mdw-group-title">客户端</div><div class="mdw-group-desc">该组配置会应用到本次任务队列。</div></div>
+        ${stdRow('客户端类型', '与当前账号和资源包保持一致', selectCtl('g-client', CATALOG.clients, SHELL.connection.clientType || CATALOG.clients[0].value))}
+      </div>
+      <div class="mdw-group">
+        <div class="mdw-group-head"><div class="mdw-group-title">设备连接</div><div class="mdw-group-desc">MAA 真正需要的是一个可用的 ADB 地址。</div></div>
+        ${stdRow('连接地址', '通过 ADB TCP 连接设备', `<input type="text" class="app-input-text mdw-row-ctl" id="g-addr" value="${esc(SHELL.connection.address || '')}" placeholder="192.168.31.190:5555"/>`)}
+        ${stdRow('连接配置', 'MAA Core 内置识别与截图策略', selectCtl('g-config', ['General', 'BlueStacks', 'MuMuEmulator12', 'LDPlayer', 'Nox', 'XYAZ', 'WSA', 'Androws'].map((v) => ({ value: v, label: v })), SHELL.connection.config || 'General'))}
+        ${stdRow('ADB 路径', '留空使用容器内 /usr/bin/adb', `<input type="text" class="app-input-text mdw-row-ctl" id="g-adbpath" value="${esc(SHELL.connection.adbPath || '')}" placeholder="/usr/bin/adb"/>`)}
+        <div class="mdw-row"><div class="mdw-row-l"><div class="mdw-row-label">连接测试</div><div class="mdw-row-desc">加载资源并尝试连接设备</div></div>
+          <div class="mdw-row-r"><button type="button" class="app-btn" id="btn-test">测试连接</button></div></div>
+      </div>
+      <div class="mdw-group">
+        <div class="mdw-group-head"><div class="mdw-group-title">任务设置 · ${esc(task ? task.name : '未选择')}</div><div class="mdw-group-desc">${esc(task ? (task.description || '') : '在左侧队列中选择任务')}</div></div>
+        ${task ? (task.options || []).map((o) => optionRowHtml(task, o)).join('') : '<div class="mdw-row"><div class="mdw-row-l"><div class="mdw-row-desc">未选择任务</div></div></div>'}
+      </div>` : `
+      <div class="mdw-group">
+        <div class="mdw-group-head"><div class="mdw-group-title">任务参数（原始 JSON）</div><div class="mdw-group-desc">由服务端映射为 MAA 集成协议参数后下发。</div></div>
+        <pre class="mdw-pre">${esc(JSON.stringify({ task: task ? task.id : null, options: task ? optsFor(task.id) : {}, meta: TCONF._meta || {} }, null, 2))}</pre>
+      </div>`}
+    <div class="mdw-footline">
+      <span class="mdw-muted" id="save-ind"></span>
+      <span class="mdw-muted" id="run-count"></span>
+    </div>`;
+
+  wrap.querySelectorAll('.mdw-tab').forEach((t) => t.addEventListener('click', () => { activeTab = t.dataset.tab; renderMain(wrap); }));
+  const g = (id) => wrap.querySelector(`#${id}`);
+  const saveConn = async (patch) => {
+    try {
+      SHELL.connection = Object.assign({}, SHELL.connection, patch);
+      await api.send('/api/connection', 'PUT', SHELL.connection);
+      flashSaved('连接设置已保存');
+      refreshShell();
+    } catch (e) { flashSaved(e.message, true); }
+  };
+  if (g('g-client')) g('g-client').addEventListener('change', () => saveConn({ clientType: g('g-client').value }));
+  if (g('g-config')) g('g-config').addEventListener('change', () => saveConn({ config: g('g-config').value }));
+  if (g('g-addr')) g('g-addr').addEventListener('change', () => saveConn({ address: g('g-addr').value.trim() }));
+  if (g('g-adbpath')) g('g-adbpath').addEventListener('change', () => saveConn({ adbPath: g('g-adbpath').value.trim() }));
+  if (g('btn-test')) g('btn-test').addEventListener('click', () => testConnection(g('btn-test')));
+  if (task && activeTab === 'basic') bindTaskOptions(wrap, task);
+  if (g('btn-run2')) g('btn-run2').addEventListener('click', runQueue);
+  const n = wrap.closest('.mdw-workbench').querySelectorAll('.mdw-qi-check:checked').length;
+  if (g('run-count')) g('run-count').textContent = `已勾选 ${n} 项任务`;
+}
+
+async function runQueue() {
+  const boxes = [...document.querySelectorAll('.mdw-qi-check:checked')];
+  if (!boxes.length) { flashSaved('请先勾选要执行的任务', true); return; }
+  flashSaved('已下发，执行中…');
+  pushLog({ timestamp: new Date().toISOString(), level: 'info', source: 'web', message: `下发任务: ${boxes.map((c) => c.dataset.task).join(', ')}` });
+  try {
+    await api.send('/api/tasks/execute', 'POST', { tasks: boxes.map((c) => c.dataset.task) });
+  } catch (e) {
+    flashSaved(e.message, true);
+    pushLog({ timestamp: new Date().toISOString(), level: 'warn', source: 'web', message: e.message });
+  }
+  refreshShell();
 }
 
 async function pageTasks(el) {
@@ -194,59 +398,94 @@ async function pageTasks(el) {
     CATALOG = catalog;
     TCONF = saved.config || {};
   }
+  if (!SELECTED) SELECTED = CATALOG.tasks[0] && CATALOG.tasks[0].id;
+  const postAction = (TCONF._meta && TCONF._meta.postAction) || 'None';
   el.innerHTML = `
-    <h2 class="mdw-title">任务</h2>
-    <div class="mdw-task-layout">
-      <div class="mdw-task-list" id="task-list">
-        <div class="mdw-task-list-head">任务列表</div>
-        ${CATALOG.tasks.map((t) => `
-          <label class="mdw-task-item" data-task="${t.id}">
-            <input type="checkbox" class="app-checkbox mdw-task-check" data-task="${t.id}"/>
-            <span class="mdw-task-name-sm">${esc(t.name)}</span>
-          </label>`).join('')}
-        <div class="mdw-savebar"><span id="save-ind" class="mdw-muted"></span></div>
-      </div>
-      <div class="mdw-task-detail" id="task-detail"></div>
-    </div>
-    <div class="mdw-action-bar">
-      <button type="button" class="app-btn mdw-btn-primary" id="btn-run">开始行动</button>
-      <span class="mdw-muted" id="run-count">已勾选 0 项任务</span>
-      <div id="run-result"></div>
+    <div class="mdw-workbench">
+      <section class="mdw-queue">
+        <div class="mdw-queue-head"><div class="mdw-queue-title">任务队列</div><div class="mdw-queue-sub">按任务切换配置顺序</div></div>
+        <div class="mdw-queue-list">
+          ${CATALOG.tasks.map((t) => `
+            <div class="mdw-qi ${t.id === SELECTED ? 'selected' : ''}" data-task="${t.id}" role="button" tabindex="0">
+              <input type="checkbox" class="app-checkbox mdw-qi-check" data-task="${t.id}"/>
+              <div class="mdw-qi-text"><div class="mdw-qi-name">${esc(t.name)}</div><div class="mdw-qi-sub">${esc(taskSummary(t))}</div></div>
+              <button type="button" class="mdw-qi-gear" title="任务设置" aria-label="任务设置"><i class="icons10-settings"></i></button>
+            </div>`).join('')}
+        </div>
+        <div class="mdw-queue-foot">
+          <div class="mdw-queue-tools">
+            <button type="button" class="app-btn" id="q-all">全选</button>
+            <button type="button" class="app-btn" id="q-clear">清空</button>
+          </div>
+          ${stdRow('完成后', '', selectCtl('q-post', [
+            { value: 'None', label: '无操作' }, { value: 'ExitGame', label: '退出游戏' },
+            { value: 'ExitEmulator', label: '退出模拟器' }, { value: 'Sleep', label: '睡眠' },
+            { value: 'Hibernate', label: '休眠' }, { value: 'Shutdown', label: '关机' },
+          ], postAction))}
+          <button type="button" class="app-btn mdw-btn-primary mdw-linkstart" id="q-run">Link Start!</button>
+        </div>
+      </section>
+      <section class="mdw-main" id="mdw-main"></section>
+      <aside class="mdw-live">
+        <div class="mdw-live-head"><div class="mdw-live-title">运行实况</div>
+          <label class="mdw-check"><input type="checkbox" class="app-checkbox" id="live-follow" ${liveFollow ? 'checked' : ''}/><span class="mdw-muted">自动跟随</span></label></div>
+        <div class="mdw-live-stats">
+          <div class="mdw-live-stat"><span>当前状态</span><b data-live="state">—</b></div>
+          <div class="mdw-live-stat"><span>设备</span><b data-live="device">—</b></div>
+          <div class="mdw-live-stat"><span>MAA Core</span><b data-live="maa">—</b></div>
+        </div>
+        <div class="mdw-timeline" id="timeline"></div>
+        <div class="mdw-live-foot">
+          <button type="button" class="app-btn" id="log-copy">复制日志</button>
+          <button type="button" class="app-btn" id="log-clear">清空</button>
+        </div>
+      </aside>
     </div>`;
 
-  const updateCount = () => {
-    const n = el.querySelectorAll('.mdw-task-check:checked').length;
-    el.querySelector('#run-count').textContent = `已勾选 ${n} 项任务`;
+  const $main = el.querySelector('.mdw-main');
+  const redraw = () => {
+    el.querySelectorAll('.mdw-qi').forEach((i) => i.classList.toggle('selected', i.dataset.task === SELECTED));
+    renderMain($main);
   };
-  el.querySelectorAll('.mdw-task-item').forEach((item) => {
-    item.addEventListener('click', (ev) => {
-      if (ev.target.classList.contains('mdw-task-check')) return; // checkbox handled separately
-      SELECTED = item.dataset.task;
-      el.querySelectorAll('.mdw-task-item').forEach((i) => i.classList.toggle('selected', i.dataset.task === SELECTED));
-      renderTaskDetail(el);
+  el.querySelectorAll('.mdw-qi').forEach((item) => {
+    const pick = () => { SELECTED = item.dataset.task; redraw(); };
+    item.addEventListener('click', pick);
+    item.querySelector('.mdw-qi-gear').addEventListener('click', (ev) => { ev.stopPropagation(); pick(); });
+    const cb = item.querySelector('.mdw-qi-check');
+    cb.addEventListener('click', (ev) => ev.stopPropagation());
+    cb.addEventListener('change', () => {
+      const n = el.querySelectorAll('.mdw-qi-check:checked').length;
+      const rc = document.querySelector('#run-count');
+      if (rc) rc.textContent = `已勾选 ${n} 项任务`;
+      const rs = $main.querySelector('.mdw-ready-sub');
+      if (rs) {
+        const st = SHELL.runner || {};
+        rs.textContent = `${(st.connection && st.connection.address) || '未配置设备'} · ${n} 个任务已启用 · MAA ${st.maaVersion || '—'}`;
+      }
     });
   });
-  el.querySelectorAll('.mdw-task-check').forEach((cb) => {
-    cb.addEventListener('click', (ev) => ev.stopPropagation());
-    cb.addEventListener('change', updateCount);
+  el.querySelector('#live-follow').addEventListener('change', (ev) => { liveFollow = ev.target.checked; });
+  el.querySelector('#q-all').addEventListener('click', () => { el.querySelectorAll('.mdw-qi-check').forEach((c) => { c.checked = true; c.dispatchEvent(new Event('change')); }); });
+  el.querySelector('#q-clear').addEventListener('click', () => { el.querySelectorAll('.mdw-qi-check').forEach((c) => { c.checked = false; c.dispatchEvent(new Event('change')); }); });
+  el.querySelector('#q-post').addEventListener('change', (ev) => {
+    TCONF._meta = Object.assign({}, TCONF._meta, { postAction: ev.target.value });
+    saveTasksConfig();
   });
-  el.querySelector('#btn-run').addEventListener('click', async () => {
-    const ids = [...el.querySelectorAll('.mdw-task-check:checked')].map((c) => c.dataset.task);
-    const out = el.querySelector('#run-result');
-    if (!ids.length) { out.innerHTML = alertBar('alert-bar-secondary', '请先勾选要执行的任务'); return; }
-    out.innerHTML = `<div class="app-progress-container mdw-progress-fit"><div class="app-progress-bar"><span class="indeterminate"></span></div></div>`;
-    try {
-      await api.send('/api/tasks/execute', 'POST', { tasks: ids });
-      pollRunStatus(out);
-    } catch (e) {
-      out.innerHTML = alertBar('alert-bar-danger', e.message);
-    }
+  el.querySelector('#q-run').addEventListener('click', runQueue);
+  el.querySelector('#log-copy').addEventListener('click', async () => {
+    const text = LOGS.map((e) => `[${e.timestamp}] [${String(e.level).toUpperCase()}] [${e.source}] ${e.message}`).join('\n');
+    try { await navigator.clipboard.writeText(text); flashSaved('日志已复制'); } catch { flashSaved('复制失败（浏览器限制）', true); }
+  });
+  el.querySelector('#log-clear').addEventListener('click', () => {
+    LOGS.length = 0;
+    el.querySelector('#timeline').innerHTML = '';
   });
 
-  SELECTED = CATALOG.tasks[0] && CATALOG.tasks[0].id;
-  if (SELECTED) el.querySelector(`.mdw-task-item[data-task="${SELECTED}"]`)?.classList.add('selected');
-  renderTaskDetail(el);
-  updateCount();
+  const tl = el.querySelector('#timeline');
+  tl.innerHTML = LOGS.slice(-200).map(timelineItem).join('');
+  if (liveFollow) tl.scrollTop = tl.scrollHeight;
+  redraw();
+  renderShell();
 }
 
 // ----------------------------------------------------------- 日程页
@@ -255,11 +494,11 @@ async function pageSchedule(el) {
   const { schedule } = await api.get('/api/tasks/schedule');
   let rows = schedule.slice();
   el.innerHTML = `
-    <h2 class="mdw-title">日程 · 定时执行</h2>
-    <p class="mdw-muted">到达设定时间后自动执行勾选的任务（由服务端调度）。</p>
+    <h2 class="mdw-h1">日程 · 定时执行</h2>
+    <p class="mdw-muted">到点自动执行勾选的任务（服务端调度器尚未接入，当前仅保存日程）。</p>
     <div class="mdw-hstack">
       <input type="time" class="app-input-text" id="s-time" value="04:00"/>
-      <div class="app-select-menu"><select id="s-task">${CATALOG.tasks.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></div>
+      ${selectCtl('s-task', CATALOG.tasks.map((t) => ({ value: t.id, label: t.name })), CATALOG.tasks[0].id)}
       <button type="button" class="app-btn" id="s-add">添加</button>
       <button type="button" class="app-btn mdw-btn-primary" id="s-save">保存日程</button>
       <span id="s-msg" class="mdw-muted"></span>
@@ -290,9 +529,10 @@ async function pageSchedule(el) {
   render();
   el.querySelector('#s-add').addEventListener('click', () => {
     const t = el.querySelector('#s-task').value;
-    const exist = rows.find((r) => r.time === el.querySelector('#s-time').value);
+    const time = el.querySelector('#s-time').value || '04:00';
+    const exist = rows.find((r) => r.time === time);
     if (exist) { if (!exist.tasks.includes(t)) exist.tasks.push(t); }
-    else rows.push({ time: el.querySelector('#s-time').value || '04:00', enabled: true, tasks: [t] });
+    else rows.push({ time, enabled: true, tasks: [t] });
     render();
   });
   el.querySelector('#s-save').addEventListener('click', async () => {
@@ -304,76 +544,53 @@ async function pageSchedule(el) {
   });
 }
 
-// ----------------------------------------------------------- 设置页（MAA 分组手风琴）
+// ----------------------------------------------------------- 设置页
 async function pageSettings(el) {
   if (!CATALOG) CATALOG = await api.get('/api/tasks/catalog');
   const [cfg, conn] = await Promise.all([api.get('/api/config'), api.get('/api/connection')]);
-  const client = conn.connection.clientType || CATALOG.clients[0].value;
+  const c = conn.connection || {};
   el.innerHTML = `
-    <h2 class="mdw-title">设置</h2>
+    <h2 class="mdw-h1">设置</h2>
     ${accordion('常规设置', `
-      <div class="mdw-opt-row"><div class="mdw-opt-label">客户端类型</div>
-        <div class="mdw-opt-ctl"><div class="app-select-menu mdw-fill"><select id="st-client">
-          ${CATALOG.clients.map((c) => `<option value="${c.value}" ${c.value === client ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}
-        </select></div></div></div>
+      ${stdRow('客户端类型', '与当前账号和资源包保持一致', selectCtl('st-client', CATALOG.clients, c.clientType || CATALOG.clients[0].value))}
       <div class="mdw-actions"><button type="button" class="app-btn mdw-btn-primary" id="st-save1">保存</button><span id="st-msg1" class="mdw-muted"></span></div>`, true)}
     ${accordion('连接设置', `
-      <div class="mdw-opt-row"><div class="mdw-opt-label">连接地址</div>
-        <div class="mdw-opt-ctl"><input type="text" class="app-input-text mdw-fill" id="st-addr" value="${esc(conn.connection.address || '')}" placeholder="ADB 地址，如 192.168.31.190:5555"/></div>
-        <div class="mdw-opt-help">设备/模拟器的 ADB 端口，格式 host:port。</div></div>
-      <div class="mdw-opt-row"><div class="mdw-opt-label">ADB 路径</div>
-        <div class="mdw-opt-ctl"><input type="text" class="app-input-text mdw-fill" id="st-adbpath" value="${esc(conn.connection.adbPath || '')}" placeholder="留空使用容器内 /usr/bin/adb"/></div>
-        <div class="mdw-opt-help">自定义 adb 可执行文件路径（服务端容器内路径）。</div></div>
-      <div class="mdw-opt-row"><div class="mdw-opt-label">连接配置</div>
-        <div class="mdw-opt-ctl"><div class="app-select-menu mdw-fill"><select id="st-conncfg">
-          ${['General', 'BlueStacks', 'MuMuEmulator12', 'LDPlayer', 'Nox', 'XYAZ', 'WSA', 'Androws'].map((c) => `<option ${(conn.connection.config || 'General') === c ? 'selected' : ''}>${c}</option>`).join('')}
-        </select></div>
-        <div class="mdw-opt-help">对应 MaaCore 内置连接配置，影响截图与触控方式。</div></div></div>
-      <div class="mdw-actions"><button type="button" class="app-btn mdw-btn-primary" id="st-save2">保存</button><span id="st-msg2" class="mdw-muted"></span></div>`, true)}
+      ${stdRow('连接地址', '设备/模拟器的 ADB 端口', `<input type="text" class="app-input-text mdw-row-ctl" id="st-addr" value="${esc(c.address || '')}" placeholder="192.168.31.190:5555"/>`)}
+      ${stdRow('ADB 路径', '留空使用容器内 /usr/bin/adb', `<input type="text" class="app-input-text mdw-row-ctl" id="st-adbpath" value="${esc(c.adbPath || '')}" placeholder="/usr/bin/adb"/>`)}
+      ${stdRow('连接配置', 'MAA Core 内置识别与截图策略', selectCtl('st-conncfg', ['General', 'BlueStacks', 'MuMuEmulator12', 'LDPlayer', 'Nox', 'XYAZ', 'WSA', 'Androws'].map((v) => ({ value: v, label: v })), c.config || 'General'))}
+      <div class="mdw-actions"><button type="button" class="app-btn" id="st-test">测试连接</button><button type="button" class="app-btn mdw-btn-primary" id="st-save2">保存</button><span id="st-msg2" class="mdw-muted"></span></div>`, true)}
     ${accordion('启动设置', `
-      <div class="mdw-opt-row"><div class="mdw-opt-label">自动下载 Runtime</div>
-        <div class="mdw-opt-ctl">${switchCtl('st-auto', !!cfg.autoFetchRuntime)}</div>
-        <div class="mdw-opt-help">服务启动时若数据卷中没有 MAA 运行包，自动从官方 Release 下载。</div></div>
+      ${stdRow('自动下载 Runtime', '数据卷中没有运行包时自动从官方 Release 下载', switchCtl('st-auto', !!cfg.autoFetchRuntime))}
       <div class="mdw-actions"><button type="button" class="app-btn mdw-btn-primary" id="st-save3">保存</button><span id="st-msg3" class="mdw-muted"></span></div>`, false)}
     ${accordion('服务设置', `
-      <div class="mdw-opt-row"><div class="mdw-opt-label">服务名称</div>
-        <div class="mdw-opt-ctl"><input type="text" class="app-input-text mdw-fill" id="st-name" value="${esc(cfg.serverName)}"/></div></div>
-      <div class="mdw-opt-row"><div class="mdw-opt-label">日志等级</div>
-        <div class="mdw-opt-ctl"><div class="app-select-menu mdw-fill"><select id="st-level">
-          ${['debug', 'info', 'warn', 'error'].map((l) => `<option ${l === cfg.logLevel ? 'selected' : ''}>${l}</option>`).join('')}
-        </select></div></div></div>
-      <div class="mdw-opt-row"><div class="mdw-opt-label">时区</div>
-        <div class="mdw-opt-ctl"><input type="text" class="app-input-text mdw-fill" id="st-tz" value="${esc(cfg.timezone)}"/></div></div>
+      ${stdRow('服务名称', '', `<input type="text" class="app-input-text mdw-row-ctl" id="st-name" value="${esc(cfg.serverName)}"/>`)}
+      ${stdRow('日志等级', '', selectCtl('st-level', ['debug', 'info', 'warn', 'error'].map((l) => ({ value: l, label: l })), cfg.logLevel))}
+      ${stdRow('时区', '', `<input type="text" class="app-input-text mdw-row-ctl" id="st-tz" value="${esc(cfg.timezone)}"/>`)}
       <div class="mdw-actions"><button type="button" class="app-btn mdw-btn-primary" id="st-save4">保存</button><span id="st-msg4" class="mdw-muted"></span></div>`, false)}`;
   bindAccordions(el);
-  el.querySelector('#st-save1').addEventListener('click', async () => {
+  const g = (id) => el.querySelector(`#${id}`);
+  g('st-save1').onclick = async () => {
+    try { await api.send('/api/connection', 'PUT', Object.assign({}, c, { clientType: g('st-client').value })); g('st-msg1').textContent = '已保存 ✔'; }
+    catch (e) { g('st-msg1').textContent = e.message; }
+  };
+  g('st-save2').onclick = async () => {
     try {
-      await api.send('/api/connection', 'PUT', Object.assign({}, conn.connection, { clientType: el.querySelector('#st-client').value }));
-      el.querySelector('#st-msg1').textContent = '已保存 ✔';
-    } catch (e) { el.querySelector('#st-msg1').textContent = e.message; }
-  });
-  el.querySelector('#st-save2').addEventListener('click', async () => {
-    try {
-      await api.send('/api/connection', 'PUT', Object.assign({}, conn.connection, {
-        address: el.querySelector('#st-addr').value.trim(),
-        adbPath: el.querySelector('#st-adbpath').value.trim(),
-        config: el.querySelector('#st-conncfg').value,
+      await api.send('/api/connection', 'PUT', Object.assign({}, c, {
+        address: g('st-addr').value.trim(), adbPath: g('st-adbpath').value.trim(), config: g('st-conncfg').value,
       }));
-      el.querySelector('#st-msg2').textContent = '已保存 ✔';
-    } catch (e) { el.querySelector('#st-msg2').textContent = e.message; }
-  });
-  el.querySelector('#st-save3').addEventListener('click', async () => {
-    try {
-      await api.send('/api/config', 'PUT', { autoFetchRuntime: el.querySelector('#st-auto').checked });
-      el.querySelector('#st-msg3').textContent = '已保存 ✔';
-    } catch (e) { el.querySelector('#st-msg3').textContent = e.message; }
-  });
-  el.querySelector('#st-save4').addEventListener('click', async () => {
-    try {
-      await api.send('/api/config', 'PUT', { serverName: el.querySelector('#st-name').value, logLevel: el.querySelector('#st-level').value, timezone: el.querySelector('#st-tz').value });
-      el.querySelector('#st-msg4').textContent = '已保存 ✔';
-    } catch (e) { el.querySelector('#st-msg4').textContent = e.message; }
-  });
+      g('st-msg2').textContent = '已保存 ✔';
+      refreshShell();
+    } catch (e) { g('st-msg2').textContent = e.message; }
+  };
+  g('st-test').onclick = () => testConnection(g('st-test'));
+  g('st-save3').onclick = async () => {
+    try { await api.send('/api/config', 'PUT', { autoFetchRuntime: g('st-auto').checked }); g('st-msg3').textContent = '已保存 ✔'; }
+    catch (e) { g('st-msg3').textContent = e.message; }
+  };
+  g('st-save4').onclick = async () => {
+    try { await api.send('/api/config', 'PUT', { serverName: g('st-name').value, logLevel: g('st-level').value, timezone: g('st-tz').value }); g('st-msg4').textContent = '已保存 ✔'; }
+    catch (e) { g('st-msg4').textContent = e.message; }
+  };
 }
 
 // ----------------------------------------------------------- 功能对照页
@@ -383,8 +600,8 @@ async function pageFeatures(el) {
   const count = { full: 0, partial: 0, none: 0, na: 0 };
   for (const s of data.sections) for (const it of s.items) count[it.status]++;
   el.innerHTML = `
-    <h2 class="mdw-title">功能对照 · MAA 桌面端 vs 本 Web</h2>
-    <p class="mdw-muted">对照基准：${esc(data.upstream)}。数据由服务端 feature-parity.json 驱动，随开发更新。</p>
+    <h2 class="mdw-h1">功能对照 · MAA 桌面端 vs 本 Web</h2>
+    <p class="mdw-muted">对照基准：${esc(data.upstream)}。本页与四语 README 由同一份 feature-parity.json 生成。</p>
     <div class="mdw-cards">
       <div class="mdw-card"><h3>已实现</h3><div class="mdw-value">${count.full}</div></div>
       <div class="mdw-card"><h3>部分实现</h3><div class="mdw-value">${count.partial}</div></div>
@@ -406,7 +623,7 @@ async function pageFeatures(el) {
 async function pageRuntime(el) {
   const render = (rt) => {
     el.innerHTML = `
-      <h2 class="mdw-title">MAA Runtime</h2>
+      <h2 class="mdw-h1">MAA Runtime</h2>
       <div class="mdw-cards">
         <div class="mdw-card"><h3>状态</h3><div class="mdw-value">${pill(rt.status)}</div>${rt.error ? `<p class="mdw-error">${esc(rt.error)}</p>` : ''}</div>
         <div class="mdw-card"><h3>MAA 版本</h3><div class="mdw-value">${esc(rt.maaVersion)}</div></div>
@@ -443,22 +660,21 @@ async function pageRuntime(el) {
 
 async function pageLogs(el) {
   el.innerHTML = `
-    <h2 class="mdw-title">日志</h2>
+    <h2 class="mdw-h1">日志</h2>
     <div class="mdw-toolbar">
-      <div class="app-select-menu"><select id="lv"><option value="">全部等级</option><option>debug</option><option>info</option><option>warn</option><option>error</option></select></div>
+      ${selectCtl('lv', [{ value: '', label: '全部等级' }, { value: 'debug', label: 'debug' }, { value: 'info', label: 'info' }, { value: 'warn', label: 'warn' }, { value: 'error', label: 'error' }], '')}
       <input type="text" class="app-input-text" id="q" placeholder="搜索关键字"/>
       <label class="mdw-check"><input type="checkbox" class="app-checkbox" id="follow" checked/><span>自动滚动</span></label>
-      <a id="dl" class="app-btn" href="/api/logs/download" target="_blank">下载日志</a>
+      <a class="app-btn" href="/api/logs/download" target="_blank">下载日志</a>
     </div>
     <div class="mdw-log" id="logbox"></div>`;
   const box = el.querySelector('#logbox');
-  let entries = (await api.get('/api/logs')).entries;
   const renderLog = () => {
     const lv = el.querySelector('#lv').value;
     const q = el.querySelector('#q').value.toLowerCase();
-    const html = entries
-      .filter((e) => (!lv || e.level === lv) && (!q || e.message.toLowerCase().includes(q)))
-      .map((e) => `<div class="lv-${e.level}">[${esc(e.timestamp)}] [${e.level.toUpperCase()}] [${esc(e.source)}] ${esc(e.message)}</div>`)
+    const html = LOGS
+      .filter((e) => (!lv || e.level === lv) && (!q || String(e.message).toLowerCase().includes(q)))
+      .map((e) => `<div class="lv-${e.level}">[${esc(e.timestamp)}] [${String(e.level).toUpperCase()}] [${esc(e.source)}] ${esc(e.message)}</div>`)
       .join('');
     const stick = el.querySelector('#follow').checked && box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
     box.innerHTML = html || '<div class="mdw-muted">（暂无日志）</div>';
@@ -467,50 +683,22 @@ async function pageLogs(el) {
   renderLog();
   el.querySelector('#lv').onchange = renderLog;
   el.querySelector('#q').oninput = renderLog;
-
-  let ws = null;
-  let retry = 0;
-  const connect = () => {
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    ws = new WebSocket(`${proto}://${location.host}/api/ws`);
-    ws.onmessage = (ev) => {
-      try {
-        const entry = JSON.parse(ev.data);
-        if (entry.type === 'log') { entries.push(entry); if (entries.length > 2000) entries.shift(); renderLog(); }
-      } catch { /* ignore */ }
-    };
-    ws.onclose = () => { retry = Math.min(retry + 1, 6); setTimeout(connect, 1000 * 2 ** retry); };
-    ws.onopen = () => { retry = 0; };
-  };
-  connect();
-  pages._logsWs = ws;
+  pages._logsTimer = setInterval(renderLog, 2000);
 }
 
 async function pageAbout(el) {
   const [version, system] = await Promise.all([api.get('/api/version'), api.get('/api/system/info')]);
   el.innerHTML = `
-    <h2 class="mdw-title">关于</h2>
+    <h2 class="mdw-h1">关于</h2>
     <div class="mdw-list">
-      <p><b>MAA Docker Web</b> v${esc(version.serviceVersion)} — 将 MAA 官方 Linux 运行包封装为可在 x86_64 / arm64 Docker 上运行的 Web 管理服务。</p>
+      <p><b>MAA for NAS</b> v${esc(version.serviceVersion)} — 将 MAA 官方 Linux 运行包封装为可在 x86_64 / arm64 Docker 上运行的 Web 管理服务。</p>
       <p><b>MAA 版本</b>: ${esc(version.maaVersion)}</p>
       <p><b>上游项目</b>: <a href="https://github.com/MaaAssistantArknights/MaaAssistantArknights" target="_blank">MaaAssistantArknights</a>（AGPL-3.0，运行时从官方 Release 下载，本仓库不分发其二进制）</p>
-      <p><b>前端组件</b>: <a href="https://github.com/virtualvivek/windows-ui" target="_blank">windows-ui</a> v4.0.2（MIT）</p>
-      <p><b>本机架构</b>: ${esc(system.architecture)}</p>
+      <p><b>前端组件</b>: <a href="https://github.com/virtualvivek/windows-ui" target="_blank">windows-ui</a>（MIT，官方 dist 本地引入）</p>
+      <p><b>本机架构</b>: ${esc(system.architecture)} · ${esc(system.platform)}</p>
       <p><b>许可</b>: 本项目代码以 MIT 许可发布，详见仓库 LICENSE 与 NOTICE。</p>
     </div>`;
 }
-
-// sidebar: follow the official windows-ui spec — the navbar toggler toggles
-// .collapsed (icon rail) on desktop / .collapsed-float (overlay) on mobile.
-// We only persist the official class across reloads.
-(function () {
-  const wrap = document.getElementById('NavBarMain');
-  if (!wrap) return;
-  try { if (localStorage.getItem('mdw-nav') === 'collapsed') wrap.classList.add('collapsed'); } catch { /* private mode */ }
-  new MutationObserver(() => {
-    try { localStorage.setItem('mdw-nav', wrap.classList.contains('collapsed') ? 'collapsed' : 'open'); } catch { /* ignore */ }
-  }).observe(wrap, { attributes: true, attributeFilter: ['class'] });
-})();
 
 // ----------------------------------------------------------- router
 const pages = {
@@ -519,19 +707,34 @@ const pages = {
 };
 
 async function route() {
-  if (pages._logsWs) { try { pages._logsWs.close(); } catch { /* ignore */ } pages._logsWs = null; }
+  if (pages._logsTimer) { clearInterval(pages._logsTimer); pages._logsTimer = null; }
   const hash = location.hash || '#/tasks';
   const name = hash.replace('#/', '').split('?')[0] || 'tasks';
-  const links = document.querySelectorAll('#app-navbar-list a');
-  links.forEach((a) => {
+  document.querySelectorAll('#app-navbar-list a').forEach((a) => {
     a.className = a.getAttribute('href') === `#/${name}` ? 'active' : 'unactive';
   });
   try {
     await (pages[name] || pages.tasks)($page);
   } catch (e) {
-    $page.innerHTML = `<h2 class="mdw-title">出错</h2><p class="mdw-error">${esc(e.message)}</p><button class="app-btn" onclick="route()">重试</button>`;
+    $page.innerHTML = `<h2 class="mdw-h1">出错</h2><p class="mdw-error">${esc(e.message)}</p><button class="app-btn" onclick="route()">重试</button>`;
   }
 }
 window.route = route;
+
+// sidebar: official windows-ui spec — the toggler flips .collapsed (icon rail)
+// on desktop. Default to the rail on desktop; remember the user's choice.
+(function () {
+  const wrap = document.getElementById('NavBarMain');
+  if (!wrap) return;
+  let stored = null;
+  try { stored = localStorage.getItem('mdw-nav'); } catch { /* private mode */ }
+  const desktop = window.innerWidth >= 760;
+  if (stored === 'collapsed' || (stored === null && desktop)) wrap.classList.add('collapsed');
+  new MutationObserver(() => {
+    try { localStorage.setItem('mdw-nav', wrap.classList.contains('collapsed') ? 'collapsed' : 'open'); } catch { /* ignore */ }
+  }).observe(wrap, { attributes: true, attributeFilter: ['class'] });
+})();
+
 window.addEventListener('hashchange', route);
+bootShell();
 route();

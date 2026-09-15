@@ -8,7 +8,7 @@ const CONFIG_DIR = () => process.env.CONFIG_DIR || path.join(process.env.DATA_DI
 const configFile = () => path.join(CONFIG_DIR(), 'config.json');
 
 const DEFAULTS = Object.freeze({
-  serverName: 'MAA Docker Web',
+  serverName: 'MAA for NAS',
   logLevel: process.env.LOG_LEVEL || 'info',
   timezone: process.env.TZ || 'Asia/Shanghai',
   autoFetchRuntime: process.env.AUTO_FETCH_RUNTIME !== 'false',

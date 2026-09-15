@@ -1,4 +1,4 @@
-/* MAA Docker Web — page styles over windows-ui.
+/* MAA for NAS — page styles over windows-ui.
    Rule: NO hardcoded colors. Everything uses windows-ui tokens
    (var(--dark, X) var(--light, Y) pairs switch via [data-theme]). */
 :root {
@@ -38,32 +38,148 @@ body {
 }
 
 @media (max-width: 760px) {
-  /* small screens: official overlay behavior; show the mobile topbar instead */
+  /* small screens: official overlay behavior; the topbar carries the toggler */
   body { display: block; }
   /* official mobile media sets .app-navbar-wrap{position:unset} but leaves
      height:100vh — it would push the page down a full screen. The nav itself
      is position:fixed there, so the empty wrap can safely collapse. */
   .app-navbar-wrap { height: 0; overflow: visible; }
-  .app-navbar-topbar-mobile {
-    display: flex;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 8;
-    align-items: center;
-    gap: 10px;
-    height: 52px;
-    padding: 0 14px;
-    border-bottom: 1px solid var(--mdw-border);
-    background: var(--color-navbar-bg-default, var(--color-background-default));
-  }
-  .app-page-container { padding-top: 56px; }
+  .mdw-topbar-burger { display: inline-block; }
+  .mdw-col .app-page-container { padding-top: 12px; }
+  .mdw-brand { display: none; }
 }
 
 /* localize the official theme-switch label (after windows-ui.min.css so it wins) */
 .app-navbar-theme-switch input+.app-navbar-theme-switch-icon::after { content: "昼间模式"; }
 .app-navbar-theme-switch input:checked+.app-navbar-theme-switch-icon::after { content: "夜间模式"; }
+
+/* ================= app shell: topbar + column + statusbar ================= */
+.mdw-col { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; min-height: 100vh; }
+
+.mdw-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  height: 48px; padding: 0 16px; flex: 0 0 auto;
+  border-bottom: 1px solid var(--mdw-border);
+  background: var(--color-navbar-bg-default, var(--color-background-default));
+  position: sticky; top: 0; z-index: 6;
+}
+.mdw-topbar-burger { display: none; cursor: pointer; padding: 4px 8px; border-radius: 4px; }
+.mdw-topbar-burger::after { font-family: icons10; font-size: 20px; content: "\f105"; }
+.mdw-topbar-l { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.mdw-brand { font-size: 15px; font-weight: 600; white-space: nowrap; }
+.mdw-topbar-r { display: flex; align-items: center; gap: 8px; }
+
+.mdw-chip { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; }
+.mdw-chip-ok { border-color: var(--color-success-default) !important; color: var(--color-success-default); }
+.mdw-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-foreground-dark, #9a9a9a); display: inline-block; flex: 0 0 auto; }
+.mdw-dot.ok { background: var(--color-success-default); }
+
+.mdw-statusbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  height: 30px; padding: 0 16px; flex: 0 0 auto; font-size: 12px;
+  border-top: 1px solid var(--mdw-border);
+  background: var(--color-navbar-bg-default, var(--color-background-default));
+  position: sticky; bottom: 0; z-index: 6;
+}
+.mdw-statusbar #sb-left { display: inline-flex; align-items: center; gap: 7px; }
+
+/* app-page-container already grows; keep it scrollable inside the column */
+.mdw-col .app-page-container { flex: 1 1 auto; overflow: visible; }
+
+/* ================= 一键长草工作台 ================= */
+.mdw-workbench { display: flex; gap: 18px; align-items: flex-start; }
+.mdw-queue { flex: 0 0 268px; display: flex; flex-direction: column; gap: 10px; }
+.mdw-queue-head { padding: 2px 2px 6px; }
+.mdw-queue-title { font-size: 17px; font-weight: 600; }
+.mdw-queue-sub { font-size: 12px; opacity: .6; }
+.mdw-queue-list { display: flex; flex-direction: column; gap: 6px; }
+.mdw-qi {
+  display: flex; align-items: center; gap: 10px; padding: 9px 10px; cursor: pointer;
+  border: 1px solid transparent; border-radius: 8px; background: var(--mdw-panel);
+}
+.mdw-qi:hover { background: var(--mdw-hover); }
+.mdw-qi.selected { border-color: var(--color-primary-adaptive, #0078d4); }
+.mdw-qi-text { flex: 1 1 auto; min-width: 0; }
+.mdw-qi-name { font-size: 14.5px; }
+.mdw-qi-sub { font-size: 12px; opacity: .62; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mdw-qi-gear { border: none; background: transparent; opacity: .55; cursor: pointer; padding: 2px 4px; }
+.mdw-qi-gear:hover { opacity: 1; }
+.mdw-qi-gear::before { font-family: icons10; content: "\f106"; }
+.mdw-qi-gear i { font-size: 15px; }
+.mdw-queue-tools { display: flex; gap: 8px; }
+.mdw-queue-tools .app-btn { flex: 1 1 0; text-align: center; justify-content: center; }
+.mdw-queue-foot { display: flex; flex-direction: column; gap: 10px; padding-top: 6px; border-top: 1px solid var(--mdw-border); }
+.mdw-linkstart { height: 40px; font-size: 15px; font-weight: 500; }
+
+.mdw-main { flex: 1 1 auto; min-width: 0; }
+.mdw-h1 { margin: 2px 0 12px; font-size: 26px; font-weight: 600; }
+.mdw-crumb { font-size: 12px; opacity: .6; margin-top: 4px; }
+
+.mdw-ready {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 16px 18px; border-radius: 10px; margin: 6px 0 16px;
+  border: 1px solid var(--mdw-border); background: var(--mdw-panel);
+}
+.mdw-ready.ok { border-left: 3px solid var(--color-success-default); }
+.mdw-ready.warn { border-left: 3px solid var(--color-danger-default); }
+.mdw-ready-state { font-size: 12px; opacity: .7; }
+.mdw-ready-title { font-size: 20px; font-weight: 600; margin: 2px 0 4px; }
+.mdw-ready-sub { font-size: 12.5px; opacity: .7; }
+
+.mdw-tabs { display: flex; gap: 6px; margin: 6px 0 14px; border-bottom: 1px solid var(--mdw-border); }
+.mdw-tab {
+  border: none; background: transparent; padding: 8px 14px; font-size: 14px; cursor: pointer;
+  color: var(--color-text-default); border-bottom: 2px solid transparent;
+}
+.mdw-tab:hover { background: var(--mdw-hover); }
+.mdw-tab.active { border-bottom-color: var(--color-primary-adaptive, #0078d4); font-weight: 600; }
+
+.mdw-group { border: 1px solid var(--mdw-border); border-radius: 10px; background: var(--mdw-panel); padding: 6px 16px 12px; margin-bottom: 14px; }
+.mdw-group-head { padding: 10px 0 6px; border-bottom: 1px solid var(--mdw-border); margin-bottom: 6px; }
+.mdw-group-title { font-size: 15px; font-weight: 600; }
+.mdw-group-desc { font-size: 12px; opacity: .62; margin-top: 2px; }
+
+.mdw-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 11px 0; border-bottom: 1px solid var(--mdw-border); }
+.mdw-row:last-child { border-bottom: none; }
+.mdw-row-l { min-width: 0; }
+.mdw-row-label { font-size: 14.5px; }
+.mdw-row-desc { font-size: 12px; opacity: .62; margin-top: 2px; }
+.mdw-row-r { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+.mdw-row-ctl { min-width: 210px; width: auto; }
+.mdw-row-r .app-input-text { min-width: 210px; }
+.mdw-row-tight { padding: 6px 0; border-bottom: none; }
+.mdw-footline { display: flex; align-items: center; justify-content: space-between; padding: 8px 2px 20px; }
+.mdw-pre { font-family: Consolas, monospace; font-size: 12px; line-height: 1.5; background: var(--color-background-default); border: 1px solid var(--mdw-border); border-radius: 6px; padding: 12px; overflow: auto; max-height: 60vh; margin: 0; }
+
+/* 运行实况 */
+.mdw-live { flex: 0 0 320px; display: flex; flex-direction: column; gap: 10px; position: sticky; top: 60px; max-height: calc(100vh - 110px); }
+.mdw-live-head { display: flex; align-items: center; justify-content: space-between; }
+.mdw-live-title { font-size: 15px; font-weight: 600; }
+.mdw-live-stats { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--mdw-border); border-radius: 8px; background: var(--mdw-panel); padding: 8px 12px; }
+.mdw-live-stat { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; padding: 5px 0; border-bottom: 1px solid var(--mdw-border); }
+.mdw-live-stat:last-child { border-bottom: none; }
+.mdw-live-stat span { opacity: .62; }
+.mdw-timeline { flex: 1 1 auto; overflow-y: auto; border: 1px solid var(--mdw-border); border-radius: 8px; background: var(--mdw-panel); padding: 8px 10px; min-height: 220px; }
+.mdw-tl-item { display: flex; gap: 9px; padding: 6px 0; }
+.mdw-tl-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex: 0 0 auto; background: var(--color-success-default); }
+.mdw-tl-item.lv-warn .mdw-tl-dot { background: #9d5d00; }
+.mdw-tl-item.lv-error .mdw-tl-dot { background: var(--color-danger-default); }
+.mdw-tl-item.lv-debug .mdw-tl-dot { background: var(--color-foreground-dark, #9a9a9a); }
+.mdw-tl-body { min-width: 0; }
+.mdw-tl-time { font-size: 11px; opacity: .55; font-variant-numeric: tabular-nums; }
+.mdw-tl-text { font-size: 13px; word-break: break-word; }
+.mdw-tl-src { font-size: 11px; opacity: .5; }
+.mdw-live-foot { display: flex; gap: 8px; }
+.mdw-live-foot .app-btn { flex: 1 1 0; justify-content: center; text-align: center; }
+
+@media (max-width: 1400px) {
+  .mdw-live { flex-basis: 280px; }
+}
+@media (max-width: 1200px) {
+  .mdw-workbench { flex-wrap: wrap; }
+  .mdw-queue { flex: 1 1 100%; }
+  .mdw-live { flex: 1 1 100%; position: static; max-height: none; }
+  .mdw-row-ctl, .mdw-row-r .app-input-text { min-width: 160px; }
+}
 
 /* ---- cards ---- */
 .mdw-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin: 16px 0; }

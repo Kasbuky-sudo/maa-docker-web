@@ -29,7 +29,18 @@ let session = null; // { handle, cbRef }
 let seq = 0;
 
 function snapshot() {
-  return { ...state, maa: maaCore.available(), maaVersion: safeVersion() };
+  const conn = readConnection();
+  let connected = false;
+  if (session) {
+    try { connected = !!maaCore.funcs().connected(session.handle); } catch { connected = false; }
+  }
+  return {
+    ...state,
+    connected,
+    connection: { address: conn.address || '', config: conn.config || 'General', adbPath: conn.adbPath || '' },
+    maa: maaCore.available(),
+    maaVersion: safeVersion(),
+  };
 }
 
 function safeVersion() {
@@ -237,6 +248,20 @@ async function start(selectedTaskIds) {
     taskIds.push(id);
     logger.info('runner', `追加任务 ${j.task.name} (#${id}) params=${JSON.stringify(j.params)}`);
   }
+
+  // 任务完成后的动作 —— MaaCore 的 CloseDown 任务。
+  // 只有 shutdown 取值有协议文档（None/Sleep/Hibernate/Shutdown）；
+  // 退出游戏/模拟器为附加字段（MAA 对未知字段容错）。
+  const postAction = (saved._meta && saved._meta.postAction) || 'None';
+  if (postAction !== 'None') {
+    const post = { client_type: 'Official' };
+    if (['Sleep', 'Hibernate', 'Shutdown'].includes(postAction)) post.shutdown = postAction;
+    if (postAction === 'ExitGame') post.exit_game = true;
+    if (postAction === 'ExitEmulator') post.exit_emulator = true;
+    const id = f.appendTask(handle, 'CloseDown', JSON.stringify(post));
+    if (id > 0) logger.info('runner', `追加完成后动作 CloseDown (#${id}) params=${JSON.stringify(post)}`);
+  }
+
   if (!f.start(handle)) throw new Error('AsstStart 失败');
   state.phase = 'running';
   state.detail = `执行中（${jobs.length} 项任务）`;
@@ -253,4 +278,39 @@ function stop() {
   return snapshot();
 }
 
-module.exports = { snapshot, start, stop, busy, buildParams, _resetForTest: () => { state = { phase: 'idle', detail: '', tasks: [], startedAt: null, finishedAt: null }; } };
+// Probe an ADB device without appending tasks: load resources, connect, disconnect.
+async function testConnect() {
+  if (busy()) throw Object.assign(new Error('任务执行中，无法测试连接'), { statusCode: 409 });
+  const conn = readConnection();
+  if (!conn.address) throw Object.assign(new Error('尚未填写设备地址'), { statusCode: 400 });
+  const dir = runtime._internal.runtimeRoot();
+  if (!dir) throw Object.assign(new Error('MAA 运行包未就绪'), { statusCode: 409 });
+  const f = maaCore.funcs();
+  const cbRef = maaCore.registerCallback(() => {});
+  const started = Date.now();
+  let handle = null;
+  try {
+    f.setUserDir(dir);
+    if (!f.loadResource(dir)) throw new Error('资源加载失败');
+    handle = f.createEx(cbRef, null);
+    if (!handle) throw new Error('创建 MaaCore 实例失败');
+    f.asyncConnect(handle, conn.adbPath || '/usr/bin/adb', conn.address, conn.config || 'General', 0);
+    for (let i = 0; i < 60; i++) {
+      await sleep(500);
+      if (f.connected(handle)) {
+        const ms = Date.now() - started;
+        logger.info('runner', `连接测试成功: ${conn.address} (${ms} ms)`);
+        return { ok: true, address: conn.address, ms, maaVersion: f.getVersion() };
+      }
+    }
+    throw new Error(`连接超时（${conn.address}）`);
+  } catch (e) {
+    logger.warn('runner', `连接测试失败: ${e.message}`);
+    return { ok: false, address: conn.address, error: e.message };
+  } finally {
+    try { if (handle) f.destroy(handle); } catch { /* ignore */ }
+    try { require('koffi').unregister(cbRef); } catch { /* ignore */ }
+  }
+}
+
+module.exports = { snapshot, start, stop, testConnect, busy, buildParams, _resetForTest: () => { state = { phase: 'idle', detail: '', tasks: [], startedAt: null, finishedAt: null }; } };

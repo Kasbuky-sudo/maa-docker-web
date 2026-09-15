@@ -1,4 +1,4 @@
-# MAA Docker Web
+# MAA for NAS
 
 [简体中文](README.md) | [English](README.en.md) | [日本語](README.ja.md) | **한국어**
 
@@ -20,14 +20,15 @@ Linux 런타임을 **x86_64 / arm64** Docker 환경(NAS 친화)에서 동작하�
 - 멀티 아키텍처 이미지와 컨테이너 배포 (`linux/amd64` + `linux/arm64`, CI가 ghcr에 게시)
 - 공식 런타임 다운로드 / SHA-256 검증 / 압축 해제 / 상태 머신
 - 실시간 로그 (WebSocket + 링 버퍼 + 파일 기록)
-- 웹 UI(공식 [windows-ui](https://github.com/virtualvivek/windows-ui) 컴포넌트만 사용): 태스크 / 스케줄 / 설정 / Runtime / 로그 / 기능 대조 / 정보
+- 웹 UI(공식 [windows-ui](https://github.com/virtualvivek/windows-ui) 컴포넌트만 사용): 원클릭 방치 워크벤치(태스크 큐 / 설정 패널 / 실시간 패널 / 상태 표시줄) / 스케줄 / 설정 / Runtime / 로그 / 기능 대조 / 정보
+- 연결 테스트(`AsstAsyncConnect` 확인, 지연 시간 표시)와 종료 후 동작(MaaCore `CloseDown`: 절전 / 최대 절전 / 시스템 종료)
 - 태스크 카탈로그(JSON 기반 UI): 이성 소모, 기지 교대, 보상 수령, 상점 구매, 공개 모집, 로그라이크, 생식 연산
 - MaaCore C API FFI 바인딩(koffi → `libMaaCore.so`): `AsstGetVersion` / `AsstSetUserDir` / `AsstLoadResource` / `AsstCreateEx` / 네이티브 콜백을 컨테이너 안에서 확인
 
 ❌ **아직 사용 불가 (중요)**
 
 - **실제 기기에서 태스크를 끝까지 실행해 본 적이 없습니다** — 연결·전송·실행 경로는 코드에 있지만 통합 검증은 미실시
-- 연결 설정은 ADB 주소 입력란 하나뿐: ADB 경로, 터치 모드, MuMu/LD 스크린샷 강화, 연결 프로필 미구현
+- 연결 설정은 주소 / ADB 경로 / 연결 프로필 지원; 터치 모드와 MuMu/LD 스크린샷 강화는 미구현
 - 데스크톱 12개 태스크 중 5개 미구현: 시작, 커스텀 태스크, 테마 변경, 창고 유지, 사용자 데이터 동기화
 - 자동 전투(Copilot)와 도구함 페이지 전체 미구현
 - 스케줄은 저장만 되고 서버 측 스케줄러가 없음. 큐 전체 동작(종료 후 작업 등)도 미구현
@@ -38,7 +39,7 @@ Linux 런타임을 **x86_64 / arm64** Docker 환경(NAS 친화)에서 동작하�
 이 표는 [`apps/maa-server/src/feature-parity.json`](apps/maa-server/src/feature-parity.json)에서 자동 생성되며, 웹 UI의 "기능 대조" 페이지와 같은 데이터를 사용합니다. 데이터 수정 후 `python3 scripts/gen-readme-parity.py`를 실행하세요 (CI가 불일치를 검사합니다).
 
 <!-- parity:begin -->
-집계: **완료 15** · 일부 10 · 미구현 26 · 데스크톱 전용 5 (총 56개)
+집계: **완료 17** · 일부 11 · 미구현 25 · 데스크톱 전용 5 (총 58개)
 
 ### 실행 파이프라인 (모든 기능의 토대)
 
@@ -47,6 +48,7 @@ Linux 런타임을 **x86_64 / arm64** Docker 환경(NAS 친화)에서 동작하�
 | MaaCore C API FFI (AsstCaller.h 전체) | ✅ 완료 |
 | 리소스 로드 (AsstLoadResource) | ✅ 완료 |
 | 기기 연결 (AsstAsyncConnect, ADB) | ✅ 완료 |
+| 연결 테스트 (AsstAsyncConnect 확인) | ✅ 완료 |
 | 태스크 전송 (AsstAppendTask + 파라미터 매핑) | ✅ 완료 |
 | 실행/정지 (AsstStart, AsstStop) | ✅ 완료 |
 | 네이티브 콜백 로그 (태스크 체인/서브태스크) | ✅ 완료 |
@@ -76,7 +78,7 @@ Linux 런타임을 **x86_64 / arm64** Docker 환경(NAS 친화)에서 동작하�
 | 다중 인스턴스/복사/이름 변경/드래그 정렬 | ❌ 미구현 |
 | 전체 선택 | ❌ 미구현 |
 | 대기 후 정지 | ❌ 미구현 |
-| 종료 후 동작 (게임/에뮬레이터 종료·시스템 종료·절전…) | ❌ 미구현 |
+| 종료 후 동작 (게임/에뮬레이터 종료·시스템 종료·절전…) | 🟡 일부 |
 | 태스크 시간 초과 알림 | ❌ 미구현 |
 | 오늘의 스테이지 안내 | ❌ 미구현 |
 | 리소스 자동 재로드 | ❌ 미구현 |
@@ -130,6 +132,7 @@ Linux 런타임을 **x86_64 / arm64** Docker 환경(NAS 친화)에서 동작하�
 | 실시간 로그 스트림 (WebSocket) | ✅ 완료 |
 | windows-ui 컴포넌트 체계 (공식 dist 동봉) | ✅ 완료 |
 | 기능 대조 페이지 (본 섹션) | ✅ 완료 |
+| 원클릭 방치 워크벤치 (3열 + 실시간 패널 + 상태 표시줄) | ✅ 완료 |
 <!-- parity:end -->
 
 ## 구조

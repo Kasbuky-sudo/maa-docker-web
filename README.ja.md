@@ -1,4 +1,4 @@
-# MAA Docker Web
+# MAA for NAS
 
 [简体中文](README.md) | [English](README.en.md) | **日本語** | [한국어](README.ko.md)
 
@@ -20,14 +20,15 @@ Linux ランタイムを、**x86_64 / arm64** の Docker 環境（NAS 向け）�
 - マルチアーキテクチャイメージとコンテナ運用（`linux/amd64` + `linux/arm64`、CI が ghcr に公開）
 - 公式ランタイムのダウンロード / SHA-256 検証 / 展開 / ステートマシン
 - リアルタイムログ（WebSocket + リングバッファ + ファイル出力）
-- Web UI（公式 [windows-ui](https://github.com/virtualvivek/windows-ui) コンポーネントのみで構築）：タスク / スケジュール / 設定 / Runtime / ログ / 機能対照 / 情報
+- Web UI（公式 [windows-ui](https://github.com/virtualvivek/windows-ui) コンポーネントのみで構築）：一括放置ワークベンチ（タスクキュー / 設定 / 実況 / ステータスバー）/ スケジュール / 設定 / Runtime / ログ / 機能対照 / 情報
+- 接続テスト（`AsstAsyncConnect` 探活・所要時間表示）と終了後アクション（MaaCore `CloseDown`：スリープ / 休止 / シャットダウン）
 - タスクカタログ（JSON 駆動 UI）：理性消費、基地シフト、報酬受取、購買部、公開求人、ローグライク、生息演算
 - MaaCore C API の FFI バインディング（koffi → `libMaaCore.so`）：`AsstGetVersion` / `AsstSetUserDir` / `AsstLoadResource` / `AsstCreateEx` / ネイティブコールバックをコンテナ内で確認
 
 ❌ **まだ使用不可（重要）**
 
 - **実機でタスクを一度も通しで動かせていません**：接続・投入・実行の経路はコード上あるが、結合検証は未実施
-- 接続設定は ADB アドレスの入力欄のみ：ADB パス、タッチモード、MuMu/LD スクリーンショット強化、接続プロファイルは未実装
+- 接続設定はアドレス / ADB パス / 接続プロファイルに対応済み；タッチモードや MuMu/LD スクリーンショット強化は未実装
 - デスクトップ版の 12 タスクのうち 5 つが未実装：起動、カスタムタスク、テーマ変更、倉庫維持、ユーザーデータ同期
 - 自動戦闘（Copilot）とツールボックスのページが丸ごと未実装
 - スケジュールは保存のみでサーバー側スケジューラなし。キュー全体の操作（終了後アクション等）も未実装
@@ -38,7 +39,7 @@ Linux ランタイムを、**x86_64 / arm64** の Docker 環境（NAS 向け）�
 本表は [`apps/maa-server/src/feature-parity.json`](apps/maa-server/src/feature-parity.json) から自動生成され、Web UI の「機能対照」ページと同一データです。更新後は `python3 scripts/gen-readme-parity.py` を実行してください（CI が差分を検出します）。
 
 <!-- parity:begin -->
-集計：**実装済み 15** · 一部 10 · 未実装 26 · デスクトップ専用 5（計 56 項目）
+集計：**実装済み 17** · 一部 11 · 未実装 25 · デスクトップ専用 5（計 58 項目）
 
 ### 実行パイプライン（すべての基盤）
 
@@ -47,6 +48,7 @@ Linux ランタイムを、**x86_64 / arm64** の Docker 環境（NAS 向け）�
 | MaaCore C API FFI（AsstCaller.h 一式） | ✅ 実装済み |
 | リソース読み込み (AsstLoadResource) | ✅ 実装済み |
 | デバイス接続 (AsstAsyncConnect, ADB) | ✅ 実装済み |
+| 接続テスト（AsstAsyncConnect 探活） | ✅ 実装済み |
 | タスク投入 (AsstAppendTask + パラメータ変換) | ✅ 実装済み |
 | 実行・停止 (AsstStart, AsstStop) | ✅ 実装済み |
 | ネイティブログ（タスクチェーン・サブタスク） | ✅ 実装済み |
@@ -76,7 +78,7 @@ Linux ランタイムを、**x86_64 / arm64** の Docker 環境（NAS 向け）�
 | 複数インスタンス・複製・名称変更・並べ替え | ❌ 未実装 |
 | 全選択 | ❌ 未実装 |
 | 待機して停止 | ❌ 未実装 |
-| 終了後アクション（ゲーム/エミュレータ終了・シャットダウン・休止…） | ❌ 未実装 |
+| 終了後アクション（ゲーム/エミュレータ終了・シャットダウン・休止…） | 🟡 一部 |
 | タスクタイムアウト通知 | ❌ 未実装 |
 | 本日のステージ情報 | ❌ 未実装 |
 | リソース自動再読み込み | ❌ 未実装 |
@@ -130,6 +132,7 @@ Linux ランタイムを、**x86_64 / arm64** の Docker 環境（NAS 向け）�
 | ログのリアルタイム配信（WebSocket） | ✅ 実装済み |
 | windows-ui コンポーネント体系（公式 dist 同梱） | ✅ 実装済み |
 | 機能対照ページ（本セクション） | ✅ 実装済み |
+| 一括放置ワークベンチ（3 カラム + 実況 + ステータスバー） | ✅ 実装済み |
 <!-- parity:end -->
 
 ## 構成

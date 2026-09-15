@@ -1,4 +1,4 @@
-# MAA Docker Web
+# MAA for NAS
 
 [简体中文](README.md) | **English** | [日本語](README.ja.md) | [한국어](README.ko.md)
 
@@ -20,14 +20,15 @@ from the official MAA GitHub release and verifies it with SHA-256 into a persist
 - Multi-arch images and containerised deployment (`linux/amd64` + `linux/arm64`, published to ghcr by CI)
 - Official runtime download / SHA-256 verification / extraction / state machine
 - Live logs (WebSocket + ring buffer + file output)
-- Web UI built entirely on official [windows-ui](https://github.com/virtualvivek/windows-ui) components: Tasks / Schedule / Settings / Runtime / Logs / Feature parity / About
+- Web UI built entirely on official [windows-ui](https://github.com/virtualvivek/windows-ui) components: one-click workbench (task queue / config panel / live panel / status bar) / Schedule / Settings / Runtime / Logs / Feature parity / About
+- Connection test (`AsstAsyncConnect` probe with latency) and post-action support (MaaCore `CloseDown`: sleep / hibernate / shutdown)
 - Task catalog (JSON-driven UI): Fight, Infrast, Award, Mall, Recruit, Roguelike, Reclamation
 - MaaCore C API FFI binding (koffi → `libMaaCore.so`): `AsstGetVersion` / `AsstSetUserDir` / `AsstLoadResource` / `AsstCreateEx` / native callback verified inside the container
 
 ❌ **Not usable yet (important)**
 
 - **No task has ever run end-to-end on a real device** — the code path exists, but no integration test was done
-- Connection settings are a single ADB address field: no ADB path, touch mode, MuMu/LD screencap enhancement, connection profile
+- Connection settings cover address / ADB path / connection profile; missing touch mode and MuMu/LD screencap enhancement
 - 5 of the 12 desktop tasks are missing: StartUp, Custom, SwitchTheme, DepotMaintain, UserDataUpdate
 - Copilot and Toolbox pages are entirely missing
 - Scheduling only stores entries; there is no server-side scheduler. Queue-level actions (post-action, timeout reminders) are missing
@@ -38,7 +39,7 @@ from the official MAA GitHub release and verifies it with SHA-256 into a persist
 Generated from [`apps/maa-server/src/feature-parity.json`](apps/maa-server/src/feature-parity.json) — the same data that drives the "Feature parity" page in the Web UI. After editing the data run `python3 scripts/gen-readme-parity.py` (CI fails if this table is stale).
 
 <!-- parity:begin -->
-Summary: **15 done** · 10 partial · 26 missing · 5 desktop-only (of 56)
+Summary: **17 done** · 11 partial · 25 missing · 5 desktop-only (of 58)
 
 ### Execution pipeline (the foundation)
 
@@ -47,6 +48,7 @@ Summary: **15 done** · 10 partial · 26 missing · 5 desktop-only (of 56)
 | MaaCore C API FFI (full AsstCaller.h) | ✅ Done |
 | Resource loading (AsstLoadResource) | ✅ Done |
 | Device connection (AsstAsyncConnect, ADB) | ✅ Done |
+| Connection test (AsstAsyncConnect probe) | ✅ Done |
 | Task dispatch (AsstAppendTask + param mapping) | ✅ Done |
 | Start / stop (AsstStart, AsstStop) | ✅ Done |
 | Native callback logs (task chain / subtask events) | ✅ Done |
@@ -76,7 +78,7 @@ Summary: **15 done** · 10 partial · 26 missing · 5 desktop-only (of 56)
 | Multiple instances / copy / rename / drag-sort | ❌ Missing |
 | Select all | ❌ Missing |
 | Wait & stop | ❌ Missing |
-| Post-action (exit game/emulator, shutdown, sleep…) | ❌ Missing |
+| Post-action (exit game/emulator, shutdown, sleep…) | 🟡 Partial |
 | Task timeout reminder | ❌ Missing |
 | Today's stage hint | ❌ Missing |
 | Auto reload resources | ❌ Missing |
@@ -130,6 +132,7 @@ Summary: **15 done** · 10 partial · 26 missing · 5 desktop-only (of 56)
 | Live log stream (WebSocket) | ✅ Done |
 | windows-ui component system (vendored official dist) | ✅ Done |
 | Feature parity page (this section) | ✅ Done |
+| One-click idle workbench (3 columns + live panel + status bar) | ✅ Done |
 <!-- parity:end -->
 
 ## Architecture

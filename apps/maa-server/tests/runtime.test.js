@@ -19,7 +19,7 @@ test('config: defaults, save whitelist and validation', () => {
   config.resetForTest();
 
   const loaded = config.load();
-  assert.equal(loaded.serverName, 'MAA Docker Web');
+  assert.equal(loaded.serverName, 'MAA for NAS');
   assert.equal(loaded.logLevel, 'info');
 
   const saved = config.save({ logLevel: 'debug', hackerField: 'nope' });
