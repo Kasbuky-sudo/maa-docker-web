@@ -10,8 +10,13 @@ const runtime = require('./runtime');
 const maaCore = require('./maa-core');
 const config = require('./config');
 
-// AsstMsgId values from the MAA protocol
-const MSG_ALL_TASKS_COMPLETED = 1;
+// AsstMsgId values — 依据运行包内 Python 绑定（resource/Python/asst/utils.py 的
+// Message 枚举）核对，切勿凭记忆写：0=InternalError 1=InitFailed 2=ConnectionInfo
+// 3=AllTasksCompleted 4=AsyncCallInfo 5=Destroyed
+const MSG_INTERNAL_ERROR = 0;
+const MSG_INIT_FAILED = 1;
+const MSG_CONNECTION_INFO = 2;
+const MSG_ALL_TASKS_COMPLETED = 3;
 const MSG_TASK_CHAIN_ERROR = 10000;
 const MSG_TASK_CHAIN_START = 10001;
 const MSG_TASK_CHAIN_COMPLETED = 10002;
@@ -75,6 +80,18 @@ function onCallback(msg, detailsJson) {
         state.finishedAt = Date.now();
         logger.info('runner', '全部任务完成');
         teardown(2000);
+        break;
+      case MSG_INIT_FAILED:
+        // 实例初始化失败（资源缺失、连接不可用等），之前被误当成「全部完成」
+        state.phase = 'error';
+        state.detail = `初始化失败: ${d.what || ''} ${d.why || ''}`.trim();
+        state.finishedAt = Date.now();
+        logger.error('runner', `MaaCore 初始化失败: ${d.what || ''} ${d.why || ''}`);
+        teardown(2000);
+        break;
+      case MSG_CONNECTION_INFO:
+        logger.info('runner', `连接信息: ${d.what || ''} ${d.why || ''}`.trim());
+        if (d.what) state.detail = String(d.what);
         break;
       case MSG_TASK_CHAIN_ERROR:
         state.phase = 'error';
@@ -370,7 +387,26 @@ async function runConnectTest() {
   const dir = runtime._internal.runtimeRoot();
   if (!dir) throw Object.assign(new Error('MAA 运行包未就绪'), { statusCode: 409 });
   const f = maaCore.funcs();
-  const cbRef = maaCore.registerCallback(() => {});
+  const notes = [];
+  let connectedByMsg = false;
+  const cbRef = maaCore.registerCallback((msg, detailsJson) => {
+    let d = {};
+    try { d = JSON.parse(detailsJson || '{}'); } catch { /* ignore */ }
+    const what = d.what || '';
+    const why = d.why || '';
+    if (msg === MSG_CONNECTION_INFO) {
+      notes.push(`连接信息: ${what}${why ? '（' + why + '）' : ''}`);
+      if (String(what).toLowerCase() === 'connected') connectedByMsg = true;
+    } else if (msg === MSG_INIT_FAILED) {
+      notes.push(`初始化失败: ${what}${why ? '（' + why + '）' : ''}`);
+    } else if (msg === MSG_SUBTASK_ERROR) {
+      notes.push(`子任务错误: ${what}${why ? '（' + why + '）' : ''}`);
+    }
+    if (notes.length) {
+      logger.info('runner', `连接测试回调 msg=${msg} ${what} ${why}`);
+      connectTest.detail = notes.slice(-3).join(' / ');
+    }
+  });
   const started = Date.now();
   let handle = null;
   try {
@@ -379,9 +415,15 @@ async function runConnectTest() {
     handle = f.createEx(cbRef, null);
     if (!handle) throw new Error('创建 MaaCore 实例失败');
     f.asyncConnect(handle, conn.adbPath || '/usr/bin/adb', conn.address, conn.config || 'General', 0);
-    for (let i = 0; i < 60; i++) {
+    // 手机 / 模拟器握手可能较慢（截图确认 + 分辨率校验），这里放宽到 90s；
+    // /api/runner/test-connect 已改为立即返回，等待不再占用 HTTP 连接。
+    for (let i = 0; i < 180; i++) {
       await sleep(500);
-      if (f.connected(handle)) {
+      if (i % 4 === 0 && !connectedByMsg) {
+        connectTest.detail = `连接测试中（${Math.round((Date.now() - started) / 1000)}s）` +
+          (notes.length ? ' · ' + notes.slice(-1)[0] : '');
+      }
+      if (connectedByMsg || f.connected(handle)) {
         const ms = Date.now() - started;
         logger.info('runner', `连接测试成功: ${conn.address} (${ms} ms)`);
         connectTest = {
@@ -391,7 +433,8 @@ async function runConnectTest() {
         return { ok: true, address: conn.address, ms, maaVersion: f.getVersion() };
       }
     }
-    throw new Error(`连接超时（${conn.address}）`);
+    throw new Error(`连接超时（${conn.address}）` +
+      (notes.length ? ' — MaaCore 反馈: ' + notes.slice(-2).join(' / ') : ' — 未收到 MaaCore 连接信息'));
   } catch (e) {
     logger.warn('runner', `连接测试失败: ${e.message}`);
     connectTest = {
