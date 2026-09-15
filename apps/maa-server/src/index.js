@@ -229,6 +229,11 @@ const routes = {
     }
     const adbPath = conn.adbPath || '/usr/bin/adb';
     const { spawn } = require('node:child_process');
+
+    // 容器重启后 adb server 不保留设备注册，先 connect（幂等，已连接时立即返回）
+    const connectProc = spawn(adbPath, ['connect', address], { timeout: 8000 });
+    connectProc.on('error', () => {});
+
     const proc = spawn(adbPath, ['-s', address, 'exec-out', 'screencap', '-p'], { timeout: 15000 });
     const chunks = [];
     let failed = null;
