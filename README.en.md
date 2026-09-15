@@ -42,14 +42,18 @@ replacing the runtime invalidates the cached MaaCore resources and drops the old
 - Mobile layout: single-column stacking below 760px, drawer navigation (official `collapsed-float`),
   no horizontal overflow on any page
 
+- Toolbox recognition **for real**: recruitment (Recruit) / depot (Depot) / operator (OperBox) run directly on MaaCore, results rendered from the official callback structures (RecruitResult / DepotInfo / OperBoxInfo); the UI clearly labels the sample data until a real reading exists
+- Copilot **for real**: lists the 76 official jobs shipped in the runtime (SSS_/Paradox_ prefixes → 保全派驻 / main / paradox) and dispatches them via the Copilot / SSSCopilot / ParadoxCopilot protocol fields
+- **Fight weekly plan**: assign different stages per weekday; the server expands them into one Fight job per stage on the matching day
+- **Server-side scheduler**: daily / weekdays / weekends / specific weekday, 30s tick, lastRun dedupe, skips when a task is already running
+- **Live device view**: ADB screencap served as PNG (verified 1920×1080 on the real phone); the monitor page refreshes at the target FPS and shows the achieved rate
+
 ❌ **Not available yet**
 
-- **No end-to-end task run on a real device yet**: the connection is verified, the download → execute → finish loop is not
-- The recognition tools (recruitment / operator / depot) have no backend API: the UI mirrors the desktop
-  layout using data from the official JSON, but the results are simulated locally and the page says so
-- Copilot: no backend API; the page is a faithful mock and can parse job files locally
+- **No end-to-end task run on a real device yet**: connect ✓, session reuse ✓, weekly-plan expansion ✓ — the "start" button is the real thing now; all that is missing is one full run
+- MAA job-sharing site search is not integrated: only the runtime's shipped jobs and locally parsed job files are available
+- "Export to Penguin-Statistics / toolbox" for the recognition tools is not implemented (results are shown in the UI)
 - Settings other than the connection group are not persisted (the `config.json` whitelist has 4 fields)
-- Schedules are stored but there is **no server-side scheduler**
 - **No authentication at all**: run it on a trusted LAN only
 
 ## Feature parity (vs the MAA desktop app; current baseline v6.17.5, the runtime itself upgrades in-app)
