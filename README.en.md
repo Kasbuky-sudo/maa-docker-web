@@ -39,7 +39,7 @@ from the official MAA GitHub release and verifies it with SHA-256 into a persist
 Generated from [`apps/maa-server/src/feature-parity.json`](apps/maa-server/src/feature-parity.json) — the same data that drives the "Feature parity" page in the Web UI. After editing the data run `python3 scripts/gen-readme-parity.py` (CI fails if this table is stale).
 
 <!-- parity:begin -->
-Summary: **17 done** · 11 partial · 25 missing · 5 desktop-only (of 58)
+Summary: **29 done** · 6 partial · 20 missing · 5 desktop-only (of 60)
 
 ### Execution pipeline (the foundation)
 
@@ -53,23 +53,24 @@ Summary: **17 done** · 11 partial · 25 missing · 5 desktop-only (of 58)
 | Start / stop (AsstStart, AsstStop) | ✅ Done |
 | Native callback logs (task chain / subtask events) | ✅ Done |
 | Screencap / live view | ❌ Missing |
+| Parameter mapping (protocol-schema driven) | ✅ Done |
 
 ### Task queue · 12 tasks (desktop list)
 
 | Feature | Status |
 |---|---|
-| StartUp (account switch / launch client) | ❌ Missing |
+| StartUp (wake & login) | ✅ Done |
 | Fight (sanity farming) | 🟡 Partial |
-| Infrast (base shift) | 🟡 Partial |
-| Award (daily rewards) | ✅ Done |
-| Mall (credit store) | 🟡 Partial |
-| Recruit (auto) | 🟡 Partial |
-| Roguelike (auto) | 🟡 Partial |
-| Reclamation Algorithm | 🟡 Partial |
-| Custom task (interface.json) | ❌ Missing |
-| Switch theme (in-game skin) | ❌ Missing |
-| Depot maintain (farming plan) | ❌ Missing |
-| User data sync | ❌ Missing |
+| Infrast (base shift) | ✅ Done |
+| Award (rewards) | ✅ Done |
+| Mall (credit store) | ✅ Done |
+| Recruit (auto) | ✅ Done |
+| Roguelike (auto) | ✅ Done |
+| Reclamation Algorithm | ✅ Done |
+| Depot recognition | ✅ Done |
+| Operator box recognition | ✅ Done |
+| Switch theme | ✅ Done |
+| Custom task | ✅ Done |
 
 ### Task queue · global actions
 
@@ -133,6 +134,7 @@ Summary: **17 done** · 11 partial · 25 missing · 5 desktop-only (of 58)
 | windows-ui component system (vendored official dist) | ✅ Done |
 | Feature parity page (this section) | ✅ Done |
 | One-click idle workbench (3 columns + live panel + status bar) | ✅ Done |
+| Task catalog / param schema generated from the protocol doc | ✅ Done |
 <!-- parity:end -->
 
 ## Architecture

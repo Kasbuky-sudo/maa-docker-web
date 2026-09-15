@@ -117,69 +117,47 @@ function readTaskConfig() {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return {}; }
 }
 
-// catalog option values -> MAA integration-protocol task params
+// catalog option values -> MAA integration-protocol task params.
+// The field list and types come from maa-task-spec.json, which is generated from
+// the official protocol document (scripts/gen-task-catalog.py) — so params stay
+// in sync with MAA instead of being hand-mapped here.
+const SPEC = require('./maa-task-spec.json');
+
 function buildParams(taskType, opts) {
   const o = opts || {};
-  const arr = (v) => (Array.isArray(v) ? v : String(v || '').split(/[,，;；]/).map((s) => s.trim()).filter(Boolean));
-  switch (taskType) {
-    case 'Fight':
-      return {
-        stage: o.stage || '',
-        medicine: Number(o.medicine) || 0,
-        stone: Number(o.stone) || 0,
-        times: Number(o.times) || 10000,
-        series: Number(o.series) || 1,
-        client_type: o.client_type || 'Official',
-        drops: { report_to_penguin: !!o.report_to_penguin },
-      };
-    case 'Infrast':
-      return {
-        mode: o.mode === 'custom' ? 10000 : 0,
-        facility: arr(o.facility),
-        drones: o.drones || '_NotUse',
-        threshold: Number(o.threshold) || 0.3,
-        replenish: !!o.replenish,
-      };
-    case 'Award':
-      return {
-        award: o.award !== false,
-        mail: o.mail !== false,
-        recruit: !!o.recruit,
-        orundum: !!o.orundum,
-        mining: !!o.mining,
-        specialaccess: !!o.specialaccess,
-      };
-    case 'Recruit':
-      return {
-        refresh: !!o.refresh,
-        select: arr(o.select).map(Number),
-        confirm: arr(o.confirm).map(Number),
-        times: Number(o.times) || 4,
-        expedite: !!o.expedite,
-        skip_robot: o.skip_robot !== false,
-      };
-    case 'Mall':
-      return {
-        credit_fight: !!o.credit_fight,
-        buy_first: arr(o.buy_first),
-        black_list: arr(o.black_list),
-      };
-    case 'Roguelike':
-      return {
-        theme: o.theme || 'Sarkaz',
-        mode: Number(o.mode) || 0,
-        starts_count: Number(o.starts_count) || 99999,
-        investment_enabled: o.investment_enabled !== false,
-        stops_when_investment_full: !!o.stops_when_investment_full,
-        squad: o.squad || '',
-        roles: o.roles || '',
-        core_char: o.core_char || '',
-      };
-    case 'ReclamationAlgorithm':
-      return { mode: Number(o.mode) || 1 };
-    default:
-      return {};
+  const spec = SPEC.tasks[taskType];
+  const params = { enable: true };
+  if (!spec) return params;
+  for (const f of spec.fields) {
+    if (f.name === 'enable') continue;
+    if (!(f.name in o)) continue;
+    const v = o[f.name];
+    switch (f.type) {
+      case 'boolean':
+        params[f.name] = !!v;
+        break;
+      case 'number': {
+        const n = Number(v);
+        if (Number.isFinite(n)) params[f.name] = n;
+        break;
+      }
+      case 'array':
+        params[f.name] = Array.isArray(v) ? v
+          : (v === '' || v == null ? [] : String(v).split(/[,，;；]/).map((s) => s.trim()).filter(Boolean));
+        break;
+      case 'object':
+        if (v && typeof v === 'object' && !Array.isArray(v)) params[f.name] = v;
+        else if (typeof v === 'string' && v.trim()) {
+          try { params[f.name] = JSON.parse(v); } catch { /* skip malformed */ }
+        }
+        break;
+      default:
+        if (v !== '' && v != null) params[f.name] = String(v);
+    }
   }
+  // client_type is required by StartUp/CloseDown and usually wanted by Fight
+  if (!params.client_type && ['StartUp', 'Fight', 'Recruit'].includes(taskType)) params.client_type = 'Official';
+  return params;
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

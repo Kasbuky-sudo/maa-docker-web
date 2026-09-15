@@ -142,10 +142,12 @@ body {
 .mdw-row:last-child { border-bottom: none; }
 .mdw-row-l { min-width: 0; }
 .mdw-row-label { font-size: 14.5px; }
-.mdw-row-desc { font-size: 12px; opacity: .62; margin-top: 2px; }
+.mdw-row-desc { font-size: 12px; opacity: .62; margin-top: 2px; max-width: 520px; }
 .mdw-row-r { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
 .mdw-row-ctl { min-width: 210px; width: auto; }
 .mdw-row-r .app-input-text { min-width: 210px; }
+.mdw-json { min-width: 300px; width: 320px; resize: vertical; font-family: Consolas, monospace; font-size: 12.5px; line-height: 1.45; }
+.mdw-row-r .app-select-menu select { min-width: 210px; }
 .mdw-row-tight { padding: 6px 0; border-bottom: none; }
 .mdw-footline { display: flex; align-items: center; justify-content: space-between; padding: 8px 2px 20px; }
 .mdw-pre { font-family: Consolas, monospace; font-size: 12px; line-height: 1.5; background: var(--color-background-default); border: 1px solid var(--mdw-border); border-radius: 6px; padding: 12px; overflow: auto; max-height: 60vh; margin: 0; }

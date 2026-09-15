@@ -47,6 +47,14 @@ function selectCtl(id, choices, value) {
   return `<div class="app-select-menu mdw-row-ctl"><select id="${id}">${choices.map((c) =>
     `<option value="${esc(String(c.value))}" ${String(c.value) === String(value) ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select></div>`;
 }
+// MaaCore 内置连接配置的中文名（MAA 桌面端命名）
+const CONN_PROFILES = [
+  ['General', '通用配置'], ['BlueStacks', '蓝叠模拟器'], ['MuMuEmulator12', 'MuMu 模拟器 12'],
+  ['LDPlayer', '雷电模拟器'], ['Nox', '夜神模拟器'], ['XYAZ', '逍遥模拟器'],
+  ['WSA', 'Windows 子系统'], ['Androws', 'Android 容器'],
+];
+const connProfileChoices = () => CONN_PROFILES.map(([value, label]) => ({ value, label }));
+
 function stdRow(label, desc, ctl) {
   return `<div class="mdw-row"><div class="mdw-row-l"><div class="mdw-row-label">${esc(label)}</div>${desc ? `<div class="mdw-row-desc">${esc(desc)}</div>` : ''}</div><div class="mdw-row-r">${ctl}</div></div>`;
 }
@@ -233,12 +241,25 @@ function taskSummary(task) {
     }
     case 'mall': {
       const first = String(o.buy_first || '').split(/[,，;；]/)[0] || '—';
-      return `优先购买 ${first}`;
+      const bits = [`优先购买 ${first}`];
+      if (o.only_buy_discount) bits.push('只买打折');
+      if (o.visit_friends) bits.push('访问好友');
+      return bits.join(' · ');
     }
     case 'roguelike':
       return `${choiceLabel(task, 'theme', o.theme)} · ${choiceLabel(task, 'mode', o.mode)}`;
     case 'reclamation':
-      return choiceLabel(task, 'mode', o.mode);
+      return `${choiceLabel(task, 'theme', o.theme)} · ${choiceLabel(task, 'mode', o.mode)}`;
+    case 'startup':
+      return `${choiceLabel(task, 'client_type', o.client_type)} · ${o.start_game_enabled ? '自动启动客户端' : '不启动客户端'}${o.account_name ? ' · 切换 ' + o.account_name : ''}`;
+    case 'depot':
+      return '识别仓库材料并供掉落/库存统计使用';
+    case 'operbox':
+      return '识别当前账号干员列表';
+    case 'switchtheme':
+      return o.themes ? `切换到 ${o.themes}` : '未填写主题名称';
+    case 'custom':
+      return (o.task_names && String(o.task_names).trim()) ? `执行 ${o.task_names}` : '未选择 interface.json 任务';
     default:
       return task.description || '';
   }
@@ -261,10 +282,39 @@ function optionRowHtml(task, opt) {
     const arr = (Array.isArray(val) ? val : []).map(String);
     ctl = `<div class="mdw-multi">${(opt.choices || []).map((c) =>
       `<label class="mdw-check"><input type="checkbox" class="app-checkbox mdw-multi-item" data-task="${task.id}" data-opt="${opt.id}" data-val="${esc(String(c.value))}" ${arr.includes(String(c.value)) ? 'checked' : ''}/><span>${esc(c.label)}</span></label>`).join('')}</div>`;
+  } else if (opt.type === 'json') {
+    const txt = typeof val === 'string' ? val : JSON.stringify(val ?? (opt.protocol && opt.protocol.type === 'array' ? [] : {}));
+    ctl = `<textarea class="app-textarea mdw-row-ctl mdw-json" id="${id}" rows="2" placeholder="${esc(opt.protocol ? opt.protocol.type : 'json')}">${esc(txt)}</textarea>`;
   } else {
     ctl = `<input type="text" class="app-input-text mdw-row-ctl" id="${id}" value="${esc(val ?? '')}" placeholder="${esc(opt.placeholder || '')}"/>`;
   }
   return stdRow(opt.label, desc, ctl);
+}
+
+function renderTaskOptions(task, tab) {
+  const want = tab === 'advanced' ? 'advanced' : 'basic';
+  const opts = (task.options || []).filter((o) => (o.group || 'basic') === want);
+  if (!opts.length) {
+    return `<div class="mdw-row"><div class="mdw-row-l"><div class="mdw-row-desc">${want === 'advanced' ? '该任务没有额外的高级参数。' : '该任务没有常规参数（仅需启用/禁用）。'}</div></div></div>`;
+  }
+  return opts.map((o) => optionRowHtml(task, o)).join('');
+}
+
+// 客户端侧的下发预览（与服务端 buildParams 同样的规则，仅用于展示）
+function previewParams(task) {
+  if (!task) return {};
+  const o = optsFor(task.id);
+  const params = { enable: true };
+  for (const opt of task.options || []) {
+    const v = o[opt.id];
+    const t = (opt.protocol && opt.protocol.type) || opt.type;
+    if (t === 'boolean') params[opt.id] = !!v;
+    else if (t === 'number') params[opt.id] = Number(v) || 0;
+    else if (t === 'array') params[opt.id] = Array.isArray(v) ? v : [];
+    else if (t === 'object') params[opt.id] = v && typeof v === 'object' ? v : {};
+    else if (v !== '' && v != null) params[opt.id] = v;
+  }
+  return { task: task.taskType, params };
 }
 
 function bindTaskOptions(root, task) {
@@ -273,6 +323,8 @@ function bindTaskOptions(root, task) {
     TCONF[task.id][opt.id] = v;
     saveTasksConfig();
     refreshQueueSummary(task.id);
+    const pv = root.querySelector('#params-preview');
+    if (pv) pv.textContent = JSON.stringify(previewParams(task), null, 2);
   };
   for (const opt of task.options || []) {
     const id = `o-${task.id}-${opt.id}`;
@@ -285,6 +337,12 @@ function bindTaskOptions(root, task) {
     });
     else if (opt.type === 'counter') node.addEventListener('change', () => write(opt, Number(node.value) || 0));
     else if (opt.type === 'text') node.addEventListener('input', () => write(opt, node.value));
+    else if (opt.type === 'json') node.addEventListener('change', () => {
+      const raw = node.value.trim();
+      if (!raw) { write(opt, opt.protocol && opt.protocol.type === 'array' ? [] : {}); return; }
+      try { write(opt, JSON.parse(raw)); }
+      catch { flashSaved(`「${opt.label}」不是合法 JSON，已保留原值`, true); }
+    });
   }
   root.querySelectorAll('.mdw-step').forEach((b) => b.addEventListener('click', () => {
     const input = root.querySelector(`#${b.dataset.for}`);
@@ -339,18 +397,22 @@ function renderMain(wrap) {
       <div class="mdw-group">
         <div class="mdw-group-head"><div class="mdw-group-title">设备连接</div><div class="mdw-group-desc">MAA 真正需要的是一个可用的 ADB 地址。</div></div>
         ${stdRow('连接地址', '通过 ADB TCP 连接设备', `<input type="text" class="app-input-text mdw-row-ctl" id="g-addr" value="${esc(SHELL.connection.address || '')}" placeholder="192.168.31.190:5555"/>`)}
-        ${stdRow('连接配置', 'MAA Core 内置识别与截图策略', selectCtl('g-config', ['General', 'BlueStacks', 'MuMuEmulator12', 'LDPlayer', 'Nox', 'XYAZ', 'WSA', 'Androws'].map((v) => ({ value: v, label: v })), SHELL.connection.config || 'General'))}
+        ${stdRow('连接配置', 'MAA Core 内置识别与截图策略', selectCtl('g-config', connProfileChoices(), SHELL.connection.config || 'General'))}
         ${stdRow('ADB 路径', '留空使用容器内 /usr/bin/adb', `<input type="text" class="app-input-text mdw-row-ctl" id="g-adbpath" value="${esc(SHELL.connection.adbPath || '')}" placeholder="/usr/bin/adb"/>`)}
         <div class="mdw-row"><div class="mdw-row-l"><div class="mdw-row-label">连接测试</div><div class="mdw-row-desc">加载资源并尝试连接设备</div></div>
           <div class="mdw-row-r"><button type="button" class="app-btn" id="btn-test">测试连接</button></div></div>
       </div>
       <div class="mdw-group">
         <div class="mdw-group-head"><div class="mdw-group-title">任务设置 · ${esc(task ? task.name : '未选择')}</div><div class="mdw-group-desc">${esc(task ? (task.description || '') : '在左侧队列中选择任务')}</div></div>
-        ${task ? (task.options || []).map((o) => optionRowHtml(task, o)).join('') : '<div class="mdw-row"><div class="mdw-row-l"><div class="mdw-row-desc">未选择任务</div></div></div>'}
+        ${task ? renderTaskOptions(task, activeTab) : '<div class="mdw-row"><div class="mdw-row-l"><div class="mdw-row-desc">未选择任务</div></div></div>'}
       </div>` : `
       <div class="mdw-group">
-        <div class="mdw-group-head"><div class="mdw-group-title">任务参数（原始 JSON）</div><div class="mdw-group-desc">由服务端映射为 MAA 集成协议参数后下发。</div></div>
-        <pre class="mdw-pre">${esc(JSON.stringify({ task: task ? task.id : null, options: task ? optsFor(task.id) : {}, meta: TCONF._meta || {} }, null, 2))}</pre>
+        <div class="mdw-group-head"><div class="mdw-group-title">任务设置 · ${esc(task ? task.name : '未选择')}</div><div class="mdw-group-desc">高级设置：低频与细节参数（与常规设置同源，保存后一并下发）。</div></div>
+        ${task ? renderTaskOptions(task, 'advanced') : '<div class="mdw-row"><div class="mdw-row-l"><div class="mdw-row-desc">未选择任务</div></div></div>'}
+      </div>
+      <div class="mdw-group">
+        <div class="mdw-group-head"><div class="mdw-group-title">任务参数（下发预览）</div><div class="mdw-group-desc">服务端按 MAA 集成协议字段生成，等价于 AsstAppendTask 的 params。</div></div>
+        <pre class="mdw-pre" id="params-preview">${esc(JSON.stringify(previewParams(task), null, 2))}</pre>
       </div>`}
     <div class="mdw-footline">
       <span class="mdw-muted" id="save-ind"></span>
@@ -372,7 +434,7 @@ function renderMain(wrap) {
   if (g('g-addr')) g('g-addr').addEventListener('change', () => saveConn({ address: g('g-addr').value.trim() }));
   if (g('g-adbpath')) g('g-adbpath').addEventListener('change', () => saveConn({ adbPath: g('g-adbpath').value.trim() }));
   if (g('btn-test')) g('btn-test').addEventListener('click', () => testConnection(g('btn-test')));
-  if (task && activeTab === 'basic') bindTaskOptions(wrap, task);
+  if (task) bindTaskOptions(wrap, task);
   if (g('btn-run2')) g('btn-run2').addEventListener('click', runQueue);
   const n = wrap.closest('.mdw-workbench').querySelectorAll('.mdw-qi-check:checked').length;
   if (g('run-count')) g('run-count').textContent = `已勾选 ${n} 项任务`;
@@ -557,7 +619,7 @@ async function pageSettings(el) {
     ${accordion('连接设置', `
       ${stdRow('连接地址', '设备/模拟器的 ADB 端口', `<input type="text" class="app-input-text mdw-row-ctl" id="st-addr" value="${esc(c.address || '')}" placeholder="192.168.31.190:5555"/>`)}
       ${stdRow('ADB 路径', '留空使用容器内 /usr/bin/adb', `<input type="text" class="app-input-text mdw-row-ctl" id="st-adbpath" value="${esc(c.adbPath || '')}" placeholder="/usr/bin/adb"/>`)}
-      ${stdRow('连接配置', 'MAA Core 内置识别与截图策略', selectCtl('st-conncfg', ['General', 'BlueStacks', 'MuMuEmulator12', 'LDPlayer', 'Nox', 'XYAZ', 'WSA', 'Androws'].map((v) => ({ value: v, label: v })), c.config || 'General'))}
+      ${stdRow('连接配置', 'MAA Core 内置识别与截图策略', selectCtl('st-conncfg', connProfileChoices(), c.config || 'General'))}
       <div class="mdw-actions"><button type="button" class="app-btn" id="st-test">测试连接</button><button type="button" class="app-btn mdw-btn-primary" id="st-save2">保存</button><span id="st-msg2" class="mdw-muted"></span></div>`, true)}
     ${accordion('启动设置', `
       ${stdRow('自动下载 Runtime', '数据卷中没有运行包时自动从官方 Release 下载', switchCtl('st-auto', !!cfg.autoFetchRuntime))}

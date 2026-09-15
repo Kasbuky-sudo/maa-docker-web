@@ -1,29 +1,394 @@
 {
-  "name": "MAA 任务目录",
-  "upstream": "MaaAssistantArknights v6.17.5 集成协议（docs/protocol）与桌面端功能对齐",
+  "_source": "generated from maa-task-spec.json (MAA v6.17.5 integration protocol)",
+  "name": "MAA for NAS 任务目录",
+  "upstream": "MaaAssistantArknights v6.17.5 集成协议 + 桌面端任务列表",
   "clients": [
-    { "value": "Official", "label": "官服" },
-    { "value": "Bilibili", "label": "Bilibili服" },
-    { "value": "YoStarEN", "label": "国际服 (EN)" },
-    { "value": "YoStarJP", "label": "日服" },
-    { "value": "YoStarKR", "label": "韩服" },
-    { "value": "txwy", "label": "繁中服" }
+    {
+      "value": "Official",
+      "label": "官服"
+    },
+    {
+      "value": "Bilibili",
+      "label": "Bilibili服"
+    },
+    {
+      "value": "txwy",
+      "label": "繁中服"
+    },
+    {
+      "value": "YoStarEN",
+      "label": "国际服 (EN)"
+    },
+    {
+      "value": "YoStarJP",
+      "label": "日服"
+    },
+    {
+      "value": "YoStarKR",
+      "label": "韩服"
+    }
   ],
   "tasks": [
+    {
+      "id": "startup",
+      "name": "开始唤醒",
+      "taskType": "StartUp",
+      "description": "启动客户端并处理登录，为后续自动化做准备。",
+      "options": [
+        {
+          "id": "client_type",
+          "type": "select",
+          "label": "客户端类型",
+          "default": "",
+          "help": "客户端版本。",
+          "group": "basic",
+          "protocol": {
+            "type": "string",
+            "required": true
+          },
+          "choices": [
+            {
+              "value": "Official",
+              "label": "官服"
+            },
+            {
+              "value": "Bilibili",
+              "label": "Bilibili服"
+            },
+            {
+              "value": "txwy",
+              "label": "繁中服"
+            },
+            {
+              "value": "YoStarEN",
+              "label": "国际服 (EN)"
+            },
+            {
+              "value": "YoStarJP",
+              "label": "日服"
+            },
+            {
+              "value": "YoStarKR",
+              "label": "韩服"
+            }
+          ]
+        },
+        {
+          "id": "start_game_enabled",
+          "type": "switch",
+          "label": "启动客户端",
+          "default": false,
+          "help": "是否自动启动客户端。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "account_name",
+          "type": "text",
+          "label": "切换账号",
+          "default": "",
+          "help": "切换账号，默认不切换。 仅支持切换至已登录的账号，使用登录名进行查找，保证输入内容在所有已登录账号唯一即可。 官服：1234567，可输入 1234567、4567、123、34567 B服：张三，可输入 张三、张、三 繁中服：账号为 Email，如 ab01@gmail.com，建议填不含星号的明文片段，如 01@gmail",
+          "group": "basic",
+          "protocol": {
+            "type": "string",
+            "required": false
+          }
+        }
+      ]
+    },
     {
       "id": "fight",
       "name": "理智作战",
       "taskType": "Fight",
       "description": "代理作战，自动消耗理智清体力。",
       "options": [
-        { "id": "stage", "type": "text", "label": "关卡选择", "default": "", "placeholder": "如 1-7 / CE-6 / 留空使用上次关卡", "help": "支持主线、资源收集、剿灭、活动关卡。" },
-        { "id": "medicine", "type": "counter", "label": "使用理智药", "default": 0, "min": 0, "max": 999, "help": "理智不足时自动使用理智药的数量。" },
-        { "id": "stone", "type": "counter", "label": "碎石次数", "default": 0, "min": 0, "max": 10, "help": "使用源石回复理智的次数。" },
-        { "id": "times", "type": "counter", "label": "刷图次数", "default": 10000, "min": 1, "max": 10000, "help": "指定次数后停止，或理智耗尽停止。" },
-        { "id": "series", "type": "select", "label": "代理连战", "default": 1, "choices": [ { "value": 1, "label": "不连战" }, { "value": 2, "label": "连战 2 次" }, { "value": 3, "label": "连战 3 次" }, { "value": 4, "label": "连战 4 次" }, { "value": 5, "label": "连战 5 次" }, { "value": 6, "label": "连战 6 次" } ] },
-        { "id": "drops", "type": "switch", "label": "掉落识别", "default": true, "help": "自动识别并统计掉落物。" },
-        { "id": "report_to_penguin", "type": "switch", "label": "上传企鹅物流", "default": false, "help": "需要先在掉落识别开启时使用。" },
-        { "id": "client_type", "type": "select", "label": "客户端类型", "default": "Official", "choicesFrom": "clients" }
+        {
+          "id": "stage",
+          "type": "text",
+          "label": "关卡选择",
+          "default": "",
+          "help": "关卡名，默认为空，识别当前/上次的关卡。不支持运行中设置。 目前支持导航的关卡有： - 全部主线关卡。可在关卡末尾添加 -NORMAL 或 -HARD 切换难度：10-14 章对应标准/磨难，15 章及以后对应常规/险地。 - 龙门币、作战记录的 5 / 6 关，但必须输入 CE-6 / LS-6。MAA 会在第六关无法代理的情况下自动切换至第五关。 - 技能书、采购凭证、碳本第 5 关，必须输入 CA-5 / AP-5 / SK-5。 - 所有芯片本。必须输入完整关卡编号，",
+          "group": "basic",
+          "protocol": {
+            "type": "string",
+            "required": false
+          }
+        },
+        {
+          "id": "medicine",
+          "type": "counter",
+          "label": "使用理智药",
+          "default": 0,
+          "help": "最大使用理智药数量。",
+          "group": "basic",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "min": 0,
+          "max": 100000
+        },
+        {
+          "id": "medicine_expire_days",
+          "type": "counter",
+          "label": "理智药过期天数",
+          "default": 0,
+          "help": "使用过期时间在指定天数内的理智药，0 表示不使用过期理智药。",
+          "group": "basic",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "min": 0,
+          "max": 100000
+        },
+        {
+          "id": "expiring_medicine",
+          "type": "counter",
+          "label": "使用快过期理智药",
+          "default": 0,
+          "help": "已弃用，自 v6.8.0 起请使用 medicine_expire_days 代替。",
+          "group": "advanced",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "min": 0,
+          "max": 100000
+        },
+        {
+          "id": "stone",
+          "type": "counter",
+          "label": "碎石次数",
+          "default": 0,
+          "help": "最大吃石头数量。",
+          "group": "basic",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "min": 0,
+          "max": 100000
+        },
+        {
+          "id": "times",
+          "type": "counter",
+          "label": "刷图次数",
+          "default": 2147483647,
+          "help": "战斗次数。",
+          "group": "basic",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "min": 0,
+          "max": 100000
+        },
+        {
+          "id": "series",
+          "type": "select",
+          "label": "代理倍率",
+          "default": 1,
+          "help": "代理倍率, -1~10。 -1 为禁用切换。 0 为自动切换为当前可用的最大倍率, 如当前理智不够最大倍率, 则选择最低可用倍率。 1~10 为指定代理倍率。 ::: info 服务器差异 输入校验取决于资源是否存在 FightSeries-OldMethodFlag： - 新列表（国服 2026/8/1 后主资源，无该 flag）：接受 -1~10 - 旧列表（外服资源带该 flag）：仅接受 -1~6，更大值会被拒绝 外服预计约半年后跟进，届时上限随资源变为 10。Win",
+          "group": "basic",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "choices": [
+            {
+              "value": "-1",
+              "label": "不切换（禁用）"
+            },
+            {
+              "value": "0",
+              "label": "自动切换最大可用倍率"
+            },
+            {
+              "value": "1",
+              "label": "1 倍"
+            },
+            {
+              "value": "2",
+              "label": "2 倍"
+            },
+            {
+              "value": "3",
+              "label": "3 倍"
+            },
+            {
+              "value": "4",
+              "label": "4 倍"
+            },
+            {
+              "value": "5",
+              "label": "5 倍"
+            },
+            {
+              "value": "6",
+              "label": "6 倍"
+            },
+            {
+              "value": "7",
+              "label": "7 倍"
+            },
+            {
+              "value": "8",
+              "label": "8 倍"
+            },
+            {
+              "value": "9",
+              "label": "9 倍"
+            },
+            {
+              "value": "10",
+              "label": "10 倍"
+            }
+          ]
+        },
+        {
+          "id": "drops",
+          "type": "json",
+          "label": "掉落识别",
+          "default": {},
+          "help": "指定掉落数量，默认不指定。key 为 item_id, value 为数量。key 可参考 resource/item_index.json 文件。 例如: { \"30011\": 10, \"30062\": 5 } 以上全部是或的关系，即任一达到即停止任务。",
+          "group": "advanced",
+          "protocol": {
+            "type": "object",
+            "required": false
+          }
+        },
+        {
+          "id": "report_to_penguin",
+          "type": "switch",
+          "label": "上传企鹅物流",
+          "default": false,
+          "help": "是否汇报企鹅数据。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "penguin_id",
+          "type": "text",
+          "label": "企鹅物流 ID",
+          "default": "",
+          "help": "企鹅数据汇报 id, 默认为空。仅在 report_to_penguin 为 true 时有效。",
+          "group": "advanced",
+          "protocol": {
+            "type": "string",
+            "required": false
+          }
+        },
+        {
+          "id": "report_to_yituliu",
+          "type": "switch",
+          "label": "上传一图流",
+          "default": false,
+          "help": "是否汇报一图流。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "yituliu_id",
+          "type": "text",
+          "label": "一图流 ID",
+          "default": "",
+          "help": "一图流汇报 id, 默认为空。仅在 report_to_yituliu 为 true 时有效。",
+          "group": "advanced",
+          "protocol": {
+            "type": "string",
+            "required": false
+          }
+        },
+        {
+          "id": "server",
+          "type": "select",
+          "label": "服务器",
+          "default": "CN",
+          "help": "服务器，会影响掉落识别及上传。",
+          "group": "advanced",
+          "protocol": {
+            "type": "string",
+            "required": false
+          },
+          "choices": [
+            {
+              "value": "CN",
+              "label": "CN"
+            },
+            {
+              "value": "US",
+              "label": "US"
+            },
+            {
+              "value": "JP",
+              "label": "JP"
+            },
+            {
+              "value": "KR",
+              "label": "KR"
+            }
+          ]
+        },
+        {
+          "id": "client_type",
+          "type": "select",
+          "label": "客户端类型",
+          "default": "",
+          "help": "客户端版本，默认为空。用于游戏崩溃时重启并连回去继续刷，若为空则不启用该功能。",
+          "group": "basic",
+          "protocol": {
+            "type": "string",
+            "required": false
+          },
+          "choices": [
+            {
+              "value": "Official",
+              "label": "官服"
+            },
+            {
+              "value": "Bilibili",
+              "label": "Bilibili服"
+            },
+            {
+              "value": "txwy",
+              "label": "繁中服"
+            },
+            {
+              "value": "YoStarEN",
+              "label": "国际服 (EN)"
+            },
+            {
+              "value": "YoStarJP",
+              "label": "日服"
+            },
+            {
+              "value": "YoStarKR",
+              "label": "韩服"
+            }
+          ]
+        },
+        {
+          "id": "DrGrandet",
+          "type": "switch",
+          "label": "博朗台模式",
+          "default": false,
+          "help": "节省理智碎石模式，仅在可能产生碎石效果时生效。 在碎石确认界面等待，直到当前的 1 点理智恢复完成后再立刻碎石。",
+          "group": "advanced",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        }
       ]
     },
     {
@@ -32,25 +397,548 @@
       "taskType": "Infrast",
       "description": "自动计算干员效率并换班。",
       "options": [
-        { "id": "mode", "type": "select", "label": "换班模式", "default": "normal", "choices": [ { "value": "normal", "label": "常规模式（自动计算效率）" }, { "value": "custom", "label": "自定义配置" } ] },
-        { "id": "facility", "type": "multi", "label": "设施", "default": ["Mfg", "Trade", "Power", "Control", "Reception", "Office", "Dorm"], "choices": [ { "value": "Mfg", "label": "制造站" }, { "value": "Trade", "label": "贸易站" }, { "value": "Power", "label": "发电站" }, { "value": "Control", "label": "控制中枢" }, { "value": "Reception", "label": "会客室" }, { "value": "Office", "label": "办公室" }, { "value": "Dorm", "label": "宿舍" } ] },
-        { "id": "drones", "type": "select", "label": "无人机用途", "default": "_NotUse", "choices": [ { "value": "_NotUse", "label": "不使用无人机" }, { "value": "Money", "label": "贸易站-龙门币" }, { "value": "CombatRecord", "label": "制造站-作战记录" } ] },
-        { "id": "threshold", "type": "select", "label": "心情阈值", "default": 0.3, "choices": [ { "value": 0.1, "label": "10%" }, { "value": 0.2, "label": "20%" }, { "value": 0.3, "label": "30%（推荐）" }, { "value": 0.4, "label": "40%" }, { "value": 0.5, "label": "50%" } ] },
-        { "id": "replenish", "type": "switch", "label": "源石碎片自动补货", "default": false }
+        {
+          "id": "mode",
+          "type": "select",
+          "label": "基建模式",
+          "default": 0,
+          "help": "换班工作模式。 0 - Default: 默认换班模式，自动计算效率较高的设施内及跨设施干员组合。 10000 - Custom: 自定义换班模式，读取用户配置，可参考 基建排班协议。 20000 - Rotation: 一键轮换模式，会跳过控制中枢、发电站、宿舍以及办公室，其余设施不进行换班但保留基本操作（如使用无人机、会客室逻辑）。",
+          "group": "basic",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "choices": [
+            {
+              "value": "0",
+              "label": "常规模式（自动计算效率）"
+            },
+            {
+              "value": "10000",
+              "label": "自定义配置（排班文件）"
+            }
+          ]
+        },
+        {
+          "id": "facility",
+          "type": "select",
+          "label": "换班设施",
+          "default": [],
+          "help": "要换班的设施。不支持运行中设置。 mode = 0 时该数组为启用集合，顺序与重复项不参与调度（换班顺序由算法统一安排）；mode = 10000 / 20000 时按数组顺序执行。 设施名：Mfg | Trade | Power | Control | Reception | Office | Dorm | Processing | Training",
+          "group": "basic",
+          "protocol": {
+            "type": "array",
+            "required": true
+          },
+          "choices": [
+            {
+              "value": "Mfg",
+              "label": "制造站"
+            },
+            {
+              "value": "Trade",
+              "label": "贸易站"
+            },
+            {
+              "value": "Power",
+              "label": "发电站"
+            },
+            {
+              "value": "Control",
+              "label": "控制中枢"
+            },
+            {
+              "value": "Reception",
+              "label": "会客室"
+            },
+            {
+              "value": "Office",
+              "label": "办公室"
+            },
+            {
+              "value": "Dorm",
+              "label": "宿舍"
+            }
+          ]
+        },
+        {
+          "id": "drones",
+          "type": "select",
+          "label": "无人机用途",
+          "default": "_NotUse",
+          "help": "无人机用途。mode = 10000 时该字段无效。",
+          "group": "basic",
+          "protocol": {
+            "type": "string",
+            "required": false
+          },
+          "choices": [
+            {
+              "value": "_NotUse",
+              "label": "不使用无人机"
+            },
+            {
+              "value": "Money",
+              "label": "贸易站-龙门币"
+            },
+            {
+              "value": "SyntheticJade",
+              "label": "贸易站-合成玉"
+            },
+            {
+              "value": "CombatRecord",
+              "label": "制造站-作战记录"
+            },
+            {
+              "value": "PureGold",
+              "label": "制造站-赤金"
+            }
+          ]
+        },
+        {
+          "id": "threshold",
+          "type": "select",
+          "label": "心情阈值",
+          "default": 0.3,
+          "help": "工作心情阈值，取值范围 [0, 1.0]。 mode = 10000 时该字段仅针对 \"autofill\" 有效。 mode = 20000 时该字段无效。",
+          "group": "basic",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "choices": [
+            {
+              "value": "0.1",
+              "label": "10%"
+            },
+            {
+              "value": "0.2",
+              "label": "20%"
+            },
+            {
+              "value": "0.3",
+              "label": "30%（推荐）"
+            },
+            {
+              "value": "0.4",
+              "label": "40%"
+            },
+            {
+              "value": "0.5",
+              "label": "50%"
+            }
+          ]
+        },
+        {
+          "id": "replenish",
+          "type": "switch",
+          "label": "源石碎片自动补货",
+          "default": false,
+          "help": "贸易站“源石碎片”是否自动补货。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "dorm_notstationed_enabled",
+          "type": "switch",
+          "label": "宿舍不放入已进驻干员",
+          "default": false,
+          "help": "是否启用宿舍“未进驻”选项。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "dorm_trust_enabled",
+          "type": "switch",
+          "label": "宿舍空余位置蹭信赖",
+          "default": false,
+          "help": "是否将宿舍剩余位置填入信赖未满干员。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "fiammetta_targets",
+          "type": "multi",
+          "label": "菲亚梅塔恢复目标",
+          "default": [
+            "清流",
+            "可露希尔",
+            "但书"
+          ],
+          "help": "菲亚梅塔恢复目标名单，换班开始时会将名单中当前心情最低的干员与菲亚梅塔一同进驻宿舍互换心情。仅 mode = 0 且 fiammetta_recovery_enabled 为 true 时生效。",
+          "group": "advanced",
+          "protocol": {
+            "type": "array",
+            "required": false
+          },
+          "choices": [
+            {
+              "value": "清流",
+              "label": "清流"
+            },
+            {
+              "value": "可露希尔",
+              "label": "可露希尔"
+            },
+            {
+              "value": "但书",
+              "label": "但书"
+            },
+            {
+              "value": "巫恋",
+              "label": "巫恋"
+            },
+            {
+              "value": "龙舌兰",
+              "label": "龙舌兰"
+            },
+            {
+              "value": "歌蕾蒂娅`（不在选项内或重复的条目会被忽略）",
+              "label": "歌蕾蒂娅`（不在选项内或重复的条目会被忽略）"
+            }
+          ]
+        },
+        {
+          "id": "fiammetta_recovery_enabled",
+          "type": "switch",
+          "label": "启用菲亚梅塔恢复",
+          "default": false,
+          "help": "是否在换班开始时使用菲亚梅塔为恢复目标恢复心情；关闭时换班将跳过宿舍准备步骤。仅 mode = 0 时生效。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "use_pinus_sylvestris",
+          "type": "switch",
+          "label": "红松骑士团跨设施组合",
+          "default": false,
+          "help": "是否启用 ｢红松骑士团｣ 跨设施组合。仅 mode = 0 时生效。",
+          "group": "advanced",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "use_perception_information",
+          "type": "switch",
+          "label": "感知信息跨设施组合",
+          "default": false,
+          "help": "是否启用 ｢感知信息｣ 跨设施组合，优先度高于 ｢人间烟火｣。仅 mode = 0 时生效。",
+          "group": "advanced",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "use_worldly_plight",
+          "type": "switch",
+          "label": "人间烟火跨设施组合",
+          "default": false,
+          "help": "是否启用 ｢人间烟火｣ 跨设施组合。仅 mode = 0 时生效。",
+          "group": "advanced",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "use_abyssal_hunter",
+          "type": "switch",
+          "label": "深海猎人跨设施组合",
+          "default": false,
+          "help": "是否启用 ｢深海猎人｣ 跨设施组合。仅 mode = 0 时生效，与 ｢红松骑士团｣ 同时启用时两者不会同时参与排班。",
+          "group": "advanced",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "reception_message_board",
+          "type": "switch",
+          "label": "会客室信息板收取信用",
+          "default": true,
+          "help": "是否领取会客室信息板信用。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "reception_clue_exchange",
+          "type": "switch",
+          "label": "进行线索交流",
+          "default": true,
+          "help": "是否进行线索交流。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "reception_send_clue",
+          "type": "switch",
+          "label": "赠送线索",
+          "default": true,
+          "help": "是否赠送线索。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "filename",
+          "type": "text",
+          "label": "排班文件",
+          "default": "",
+          "help": "自定义配置路径。不支持运行中设置。 <Badge type=\"warning\" text=\"仅在 mode = 10000 时生效\" />",
+          "group": "advanced",
+          "protocol": {
+            "type": "string",
+            "required": true
+          }
+        },
+        {
+          "id": "plan_index",
+          "type": "counter",
+          "label": "计划序号",
+          "default": 0,
+          "help": "使用配置中的方案序号。不支持运行中设置。 <Badge type=\"warning\" text=\"仅在 mode = 10000 时生效\" />",
+          "group": "advanced",
+          "protocol": {
+            "type": "number",
+            "required": true
+          },
+          "min": 0,
+          "max": 999
+        },
+        {
+          "id": "continue_training",
+          "type": "switch",
+          "label": "专精完成后继续尝试",
+          "default": false,
+          "help": "训练室是否继续未完成的专精训练。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        }
       ]
     },
     {
       "id": "award",
-      "name": "领取日常奖励",
+      "name": "领取奖励",
       "taskType": "Award",
-      "description": "领取每日/每周任务奖励、邮件与月卡。",
+      "description": "领取日常/周常奖励、邮件与月卡。",
       "options": [
-        { "id": "award", "type": "switch", "label": "领取每日/每周任务奖励", "default": true },
-        { "id": "mail", "type": "switch", "label": "领取所有邮件奖励", "default": true },
-        { "id": "recruit", "type": "switch", "label": "进行每日免费单抽", "default": false, "help": "活动期间每日免费单抽。" },
-        { "id": "orundum", "type": "switch", "label": "领取幸运墙合成玉", "default": false },
-        { "id": "mining", "type": "switch", "label": "领取限时开采许可", "default": false },
-        { "id": "specialaccess", "type": "switch", "label": "领取五周年赠送月卡", "default": false }
+        {
+          "id": "award",
+          "type": "switch",
+          "label": "领取每日/每周任务奖励",
+          "default": true,
+          "help": "领取每日/每周任务奖励。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "mail",
+          "type": "switch",
+          "label": "领取所有邮件奖励",
+          "default": false,
+          "help": "领取所有邮件奖励。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "recruit",
+          "type": "switch",
+          "label": "进行每日免费单抽",
+          "default": false,
+          "help": "领取限定池子赠送的每日免费单抽。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "orundum",
+          "type": "switch",
+          "label": "领取幸运墙合成玉",
+          "default": false,
+          "help": "领取幸运墙的合成玉奖励。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "mining",
+          "type": "switch",
+          "label": "领取限时开采许可",
+          "default": false,
+          "help": "领取限时开采许可的合成玉奖励。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "specialaccess",
+          "type": "switch",
+          "label": "领取赠送月卡",
+          "default": false,
+          "help": "领取五周年赠送的月卡奖励。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "mall",
+      "name": "信用收支",
+      "taskType": "Mall",
+      "description": "访问好友、收信用并在信用商店购物。",
+      "options": [
+        {
+          "id": "visit_friends",
+          "type": "switch",
+          "label": "访问好友",
+          "default": true,
+          "help": "是否访问好友基建以获得信用。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "shopping",
+          "type": "switch",
+          "label": "信用商店自动购物",
+          "default": true,
+          "help": "是否购物。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "buy_first",
+          "type": "json",
+          "label": "优先购买（分号分隔）",
+          "default": [],
+          "help": "优先购买列表。商品名，如 \"招聘许可\"、\"龙门币\" 等。",
+          "group": "basic",
+          "protocol": {
+            "type": "array",
+            "required": false
+          }
+        },
+        {
+          "id": "blacklist",
+          "type": "json",
+          "label": "黑名单（分号分隔）",
+          "default": [],
+          "help": "购物黑名单列表。商品名，如 \"加急许可\"、\"家具零件\" 等。",
+          "group": "basic",
+          "protocol": {
+            "type": "array",
+            "required": false
+          }
+        },
+        {
+          "id": "force_shopping_if_credit_full",
+          "type": "switch",
+          "label": "信用溢出时无视黑名单",
+          "default": false,
+          "help": "是否在信用溢出时无视黑名单。",
+          "group": "advanced",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "only_buy_discount",
+          "type": "switch",
+          "label": "只购买打折商品",
+          "default": false,
+          "help": "是否只购买折扣物品，只作用于第二轮购买。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "reserve_max_credit",
+          "type": "switch",
+          "label": "信用点低于 300 时停止购买",
+          "default": false,
+          "help": "是否在信用点低于 300 时停止购买，只作用于第二轮购买。",
+          "group": "advanced",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "credit_fight",
+          "type": "switch",
+          "label": "借助战刷信用点",
+          "default": false,
+          "help": "是否借助战打一局 OF-1 关卡以便在第二天获得更多信用。",
+          "group": "advanced",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "formation_index",
+          "type": "counter",
+          "label": "使用编队",
+          "default": 0,
+          "help": "打 OF-1 时所使用的编队栏位的编号。 为 0–4 的整数，其中 0 表示选择当前编队，1-4 分别表示第一、二、三、四编队。",
+          "group": "advanced",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "min": 0,
+          "max": 100000
+        }
       ]
     },
     {
@@ -59,48 +947,980 @@
       "taskType": "Recruit",
       "description": "自动识别公招标签并完成招募。",
       "options": [
-        { "id": "refresh", "type": "switch", "label": "自动刷新三星标签", "default": true },
-        { "id": "select", "type": "multi", "label": "招募标签等级", "default": [4, 5, 6], "choices": [ { "value": 3, "label": "3 星" }, { "value": 4, "label": "4 星" }, { "value": 5, "label": "5 星" }, { "value": 6, "label": "6 星" } ] },
-        { "id": "confirm", "type": "multi", "label": "自动确认等级", "default": [3, 4], "choices": [ { "value": 1, "label": "1 星" }, { "value": 2, "label": "2 星" }, { "value": 3, "label": "3 星" }, { "value": 4, "label": "4 星" } ] },
-        { "id": "times", "type": "counter", "label": "招募次数上限", "default": 4, "min": 1, "max": 20 },
-        { "id": "expedite", "type": "switch", "label": "使用加急许可", "default": false },
-        { "id": "skip_robot", "type": "switch", "label": "识别到机器人时跳过", "default": true }
-      ]
-    },
-    {
-      "id": "mall",
-      "name": "信用商店购物",
-      "taskType": "Mall",
-      "description": "收取信用点并自动购买信用商店商品。",
-      "options": [
-        { "id": "credit_fight", "type": "switch", "label": "借助战刷信用点", "default": false },
-        { "id": "buy_first", "type": "text", "label": "优先购买（逗号分隔）", "default": "招聘许可,龙门币,赤金" },
-        { "id": "black_list", "type": "text", "label": "黑名单（逗号分隔）", "default": "家具" }
+        {
+          "id": "refresh",
+          "type": "switch",
+          "label": "自动刷新 3 星标签",
+          "default": false,
+          "help": "是否刷新三星 Tags。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "select",
+          "type": "select",
+          "label": "招募标签等级(Tag 级别)",
+          "default": [],
+          "help": "会去点击标签的 Tag 等级。",
+          "group": "basic",
+          "protocol": {
+            "type": "array",
+            "required": true
+          },
+          "choices": [
+            {
+              "value": "3",
+              "label": "3 星"
+            },
+            {
+              "value": "4",
+              "label": "4 星"
+            },
+            {
+              "value": "5",
+              "label": "5 星"
+            },
+            {
+              "value": "6",
+              "label": "6 星"
+            }
+          ]
+        },
+        {
+          "id": "confirm",
+          "type": "select",
+          "label": "自动确认等级",
+          "default": [],
+          "help": "会去点击确认的 Tag 等级。若仅公招计算，可设置为空数组。",
+          "group": "basic",
+          "protocol": {
+            "type": "array",
+            "required": true
+          },
+          "choices": [
+            {
+              "value": "1",
+              "label": "1 星"
+            },
+            {
+              "value": "2",
+              "label": "2 星"
+            },
+            {
+              "value": "3",
+              "label": "3 星"
+            },
+            {
+              "value": "4",
+              "label": "4 星"
+            },
+            {
+              "value": "5",
+              "label": "5 星"
+            },
+            {
+              "value": "6",
+              "label": "6 星"
+            }
+          ]
+        },
+        {
+          "id": "first_tags",
+          "type": "json",
+          "label": "首选标签",
+          "default": [],
+          "help": "首选 Tags，仅在 Tag 等级为 3 时有效。默认为空。 当 Tag 等级为 3 时，会尽可能多地选择这里的 Tags（如果有），而且是强制选择，也就是会忽略所有“让 3 星 Tag 不被选择”的设置。",
+          "group": "basic",
+          "protocol": {
+            "type": "array",
+            "required": false
+          }
+        },
+        {
+          "id": "extra_tags_mode",
+          "type": "counter",
+          "label": "多选 Tag 策略",
+          "default": 0,
+          "help": "选择更多的 Tags。 0 - 默认行为 1 - 选 3 个 Tags, 即使可能冲突 2 - 如果可能, 同时选择更多的高星 Tag 组合, 即使可能冲突",
+          "group": "advanced",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "min": 0,
+          "max": 100000
+        },
+        {
+          "id": "times",
+          "type": "counter",
+          "label": "最大招募次数",
+          "default": 0,
+          "help": "招募多少次。若仅公招计算，可设置为 0。",
+          "group": "basic",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "min": 0,
+          "max": 100000
+        },
+        {
+          "id": "set_time",
+          "type": "switch",
+          "label": "自动设置招募时间",
+          "default": true,
+          "help": "是否设置招募时限。仅在 times 为 0 时生效。",
+          "group": "advanced",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "expedite",
+          "type": "switch",
+          "label": "使用加急许可",
+          "default": false,
+          "help": "是否使用加急许可。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "expedite_times",
+          "type": "counter",
+          "label": "加急次数",
+          "default": 0,
+          "help": "加急次数，仅在 expedite 为 true 时有效。当前版本已不生效，加急不受次数限制，直至 times 达到上限。",
+          "group": "basic",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "min": 0,
+          "max": 999
+        },
+        {
+          "id": "skip_robot",
+          "type": "switch",
+          "label": "识别到机器人时跳过",
+          "default": true,
+          "help": "已废弃，仅用于兼容旧参数。 当未提供 preserve_tags 且该值为 true 时，会在识别到 支援机械 时跳过；元素 不再视为旧版 1 星词条。 :::",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "preserve_tags",
+          "type": "json",
+          "label": "保留指定词条",
+          "default": [],
+          "help": "需要保留并跳过当前公招槽位的 Tag 名称列表。默认为空。 当识别到任一指定 Tag 时，MAA 会保留该槽位并跳过本次招募。",
+          "group": "basic",
+          "protocol": {
+            "type": "array",
+            "required": false
+          }
+        },
+        {
+          "id": "recruitment_time",
+          "type": "json",
+          "label": "招募时间（分钟）",
+          "default": {},
+          "help": "Tag 等级（大于等于 3）和对应的希望招募时限，单位为分钟，默认值都为 540（即 09:00:00）。 例如: { \"3\": 540, \"4\": 540 }",
+          "group": "basic",
+          "protocol": {
+            "type": "object",
+            "required": false
+          }
+        },
+        {
+          "id": "report_to_penguin",
+          "type": "switch",
+          "label": "上传企鹅物流",
+          "default": false,
+          "help": "是否汇报企鹅数据。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "penguin_id",
+          "type": "text",
+          "label": "企鹅物流 ID",
+          "default": "",
+          "help": "企鹅数据汇报 id, 默认为空。仅在 report_to_penguin 为 true 时有效。",
+          "group": "advanced",
+          "protocol": {
+            "type": "string",
+            "required": false
+          }
+        },
+        {
+          "id": "report_to_yituliu",
+          "type": "switch",
+          "label": "上传一图流",
+          "default": false,
+          "help": "是否汇报一图流数据。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "yituliu_id",
+          "type": "text",
+          "label": "一图流 ID",
+          "default": "",
+          "help": "一图流汇报 id, 默认为空。仅在 report_to_yituliu 为 true 时有效。",
+          "group": "advanced",
+          "protocol": {
+            "type": "string",
+            "required": false
+          }
+        },
+        {
+          "id": "server",
+          "type": "select",
+          "label": "服务器",
+          "default": "CN",
+          "help": "服务器，会影响上传。",
+          "group": "advanced",
+          "protocol": {
+            "type": "string",
+            "required": false
+          },
+          "choices": [
+            {
+              "value": "CN",
+              "label": "CN"
+            },
+            {
+              "value": "US",
+              "label": "US"
+            },
+            {
+              "value": "JP",
+              "label": "JP"
+            },
+            {
+              "value": "KR",
+              "label": "KR"
+            }
+          ]
+        }
       ]
     },
     {
       "id": "roguelike",
-      "name": "无限肉鸽",
+      "name": "自动肉鸽",
       "taskType": "Roguelike",
-      "description": "自动集成战略模式（肉鸽）。",
+      "description": "自动集成战略模式。",
       "options": [
-        { "id": "theme", "type": "select", "label": "主题", "default": "Sarkaz", "choices": [ { "value": "Phantom", "label": "傀影与猩红孤钻" }, { "value": "Mizuki", "label": "水月与深蓝之树" }, { "value": "Sami", "label": "探索者的银凇止境" }, { "value": "Sarkaz", "label": "萨卡兹的无终奇想" }, { "value": "JieYuan", "label": "界园肉鸽" }, { "value": "BlackFlow", "label": "黑流树海" } ] },
-        { "id": "mode", "type": "select", "label": "策略", "default": 0, "choices": [ { "value": 0, "label": "刷等级，尽可能稳定打更多层数" }, { "value": 1, "label": "刷源石锭，投资完成后自动退出" }, { "value": 4, "label": "刷开局，先拿一个开局干员后退出" } ] },
-        { "id": "starts_count", "type": "counter", "label": "开始探索次数", "default": 99999, "min": 1, "max": 99999 },
-        { "id": "investment_enabled", "type": "switch", "label": "投资源石锭", "default": true },
-        { "id": "stops_when_investment_full", "type": "switch", "label": "投资满后自动退出", "default": false },
-        { "id": "squad", "type": "select", "label": "开局分队", "default": "", "choices": [ { "value": "", "label": "默认分队" }, { "value": "指挥分队", "label": "指挥分队" }, { "value": "集群分队", "label": "集群分队" }, { "value": "后勤分队", "label": "后勤分队" }, { "value": "矛头分队", "label": "矛头分队" }, { "value": "突击战术分队", "label": "突击战术分队" }, { "value": "堡垒战术分队", "label": "堡垒战术分队" }, { "value": "远程战术分队", "label": "远程战术分队" }, { "value": "破坏战术分队", "label": "破坏战术分队" }, { "value": "研究分队", "label": "研究分队" }, { "value": "高规格分队", "label": "高规格分队" } ] },
-        { "id": "roles", "type": "select", "label": "开局职业", "default": "", "choices": [ { "value": "", "label": "默认职业" }, { "value": "先锋", "label": "先锋" }, { "value": "近卫", "label": "近卫" }, { "value": "重装", "label": "重装" }, { "value": "狙击", "label": "狙击" }, { "value": "术师", "label": "术师" }, { "value": "医疗", "label": "医疗" }, { "value": "辅助", "label": "辅助" }, { "value": "特种", "label": "特种" } ] },
-        { "id": "core_char", "type": "text", "label": "开局干员", "default": "", "placeholder": "留空自动选择" }
+        {
+          "id": "theme",
+          "type": "select",
+          "label": "肉鸽主题",
+          "default": "Phantom",
+          "help": "主题。 Phantom - 傀影与猩红血钻 Mizuki - 水月与深蓝之树 Sami - 探索者的银凇止境 Sarkaz - 萨卡兹的无终奇语 JieGarden - 岁的界园志异 BlackFlow - 黑流树海",
+          "group": "basic",
+          "protocol": {
+            "type": "string",
+            "required": false
+          },
+          "choices": [
+            {
+              "value": "Phantom",
+              "label": "傀影与猩红孤钻"
+            },
+            {
+              "value": "Mizuki",
+              "label": "水月与深蓝之树"
+            },
+            {
+              "value": "Sami",
+              "label": "探索者的银凇止境"
+            },
+            {
+              "value": "Sarkaz",
+              "label": "萨卡兹的无终奇想"
+            },
+            {
+              "value": "JieYuan",
+              "label": "界园肉鸽"
+            },
+            {
+              "value": "BlackFlow",
+              "label": "黑流树海"
+            }
+          ]
+        },
+        {
+          "id": "mode",
+          "type": "select",
+          "label": "策略",
+          "default": 0,
+          "help": "模式。 0 - 刷分/奖励点数，尽可能稳定地打更多层数。 1 - 刷源石锭，第一层投资完就退出。 2 - <Badge type=\"danger\" text=\"已移除\" /> 原兼顾模式 0 与 1，当前版本传入会被拒绝。 3 - <Badge type=\"danger\" text=\"未开放\" /> 传入会被拒绝。 4 - 凹开局，先在 0 难度下到达第三层后重开，再到指定难度下凹开局奖励，若不为热水壶或希望则回到 0 难度下重新来过；若在 Phantom 主题下则不切换难度",
+          "group": "basic",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "choices": [
+            {
+              "value": "0",
+              "label": "刷等级，尽可能稳定打更多层"
+            },
+            {
+              "value": "1",
+              "label": "刷源石锭，投资满后退出"
+            },
+            {
+              "value": "4",
+              "label": "刷开局，拿开局干员后退出"
+            }
+          ]
+        },
+        {
+          "id": "squad",
+          "type": "text",
+          "label": "开局分队",
+          "default": "指挥分队",
+          "help": "开局分队名。",
+          "group": "basic",
+          "protocol": {
+            "type": "string",
+            "required": false
+          }
+        },
+        {
+          "id": "roles",
+          "type": "text",
+          "label": "开局职业组",
+          "default": "取长补短",
+          "help": "开局职业组。",
+          "group": "basic",
+          "protocol": {
+            "type": "string",
+            "required": false
+          }
+        },
+        {
+          "id": "core_char",
+          "type": "text",
+          "label": "开局干员",
+          "default": "",
+          "help": "开局干员名。仅支持单个干员中文名，无论区服；若留空或设置为空字符串 \"\" 则根据练度自动选择。",
+          "group": "basic",
+          "protocol": {
+            "type": "string",
+            "required": false
+          }
+        },
+        {
+          "id": "use_support",
+          "type": "switch",
+          "label": "使用助战",
+          "default": false,
+          "help": "开局干员是否为助战干员。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "use_nonfriend_support",
+          "type": "switch",
+          "label": "允许非好友助战",
+          "default": false,
+          "help": "是否可以是非好友助战干员。仅在 use_support 为 true 时有效。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "starts_count",
+          "type": "counter",
+          "label": "开始探索次数",
+          "default": 2147483647,
+          "help": "开始探索的次数。达到后自动停止任务。",
+          "group": "basic",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "min": 0,
+          "max": 100000
+        },
+        {
+          "id": "difficulty",
+          "type": "select",
+          "label": "难度",
+          "default": -1,
+          "help": "指定难度等级，-1 表示不指定难度。若指定难度未解锁，则会选择当前已解锁的最高难度。",
+          "group": "basic",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "choices": [
+            {
+              "value": "0",
+              "label": "默认"
+            },
+            {
+              "value": "1",
+              "label": "难度 1"
+            },
+            {
+              "value": "2",
+              "label": "难度 2"
+            },
+            {
+              "value": "3",
+              "label": "难度 3"
+            },
+            {
+              "value": "4",
+              "label": "难度 4"
+            },
+            {
+              "value": "5",
+              "label": "难度 5"
+            },
+            {
+              "value": "6",
+              "label": "难度 6"
+            },
+            {
+              "value": "7",
+              "label": "难度 7"
+            },
+            {
+              "value": "8",
+              "label": "难度 8"
+            },
+            {
+              "value": "9",
+              "label": "难度 9"
+            },
+            {
+              "value": "10",
+              "label": "难度 10"
+            },
+            {
+              "value": "11",
+              "label": "难度 11"
+            },
+            {
+              "value": "12",
+              "label": "难度 12"
+            },
+            {
+              "value": "13",
+              "label": "难度 13"
+            },
+            {
+              "value": "14",
+              "label": "难度 14"
+            },
+            {
+              "value": "15",
+              "label": "难度 15"
+            }
+          ]
+        },
+        {
+          "id": "stop_at_final_boss",
+          "type": "switch",
+          "label": "第五层 BOSS 前暂停",
+          "default": false,
+          "help": "是否在第 5 层险路恶敌节点前停止任务。仅适用于除 Phantom 以外的主题。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "stop_at_max_level",
+          "type": "switch",
+          "label": "满级后自动停止",
+          "default": false,
+          "help": "是否在肉鸽等级刷满后停止任务。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "investment_enabled",
+          "type": "switch",
+          "label": "投资源石锭",
+          "default": true,
+          "help": "是否投资源石锭。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "investments_count",
+          "type": "counter",
+          "label": "投资多少个源石锭后停止",
+          "default": 2147483647,
+          "help": "投资源石锭的次数。达到后自动停止任务。",
+          "group": "basic",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "min": 0,
+          "max": 100000
+        },
+        {
+          "id": "stop_when_investment_full",
+          "type": "switch",
+          "label": "是否在投资到达上限后自动停止任务",
+          "default": false,
+          "help": "是否在投资到达上限后自动停止任务。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "investment_with_more_score",
+          "type": "switch",
+          "label": "投资模式启用购物/招募/进二层",
+          "default": false,
+          "help": "是否在投资后尝试购物。仅适用于模式 1。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "start_with_elite_two",
+          "type": "switch",
+          "label": "凹开局干员直升精二",
+          "default": false,
+          "help": "是否在凹开局的同时凹干员精二直升。仅适用于模式 4。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "only_start_with_elite_two",
+          "type": "switch",
+          "label": "只凹直升精二，不进行作战",
+          "default": false,
+          "help": "是否只凹开局干员精二直升而忽视其他开局条件。仅在模式为 4 且 start_with_elite_two 为 true 时有效。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "refresh_trader_with_dice",
+          "type": "switch",
+          "label": "刷新商店（指路鳞）",
+          "default": false,
+          "help": "是否用骰子刷新商店购买特殊商品。仅适用于 Mizuki 主题，用于刷指路鳞。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "first_floor_foldartal",
+          "type": "text",
+          "label": "凹第一层远见密文板",
+          "default": "",
+          "help": "希望在第一层远见阶段得到的密文版。仅适用于 Sami 主题，不限模式；若成功凹到则停止任务。",
+          "group": "advanced",
+          "protocol": {
+            "type": "string",
+            "required": false
+          }
+        },
+        {
+          "id": "start_foldartal_list",
+          "type": "json",
+          "label": "开局密文板列表",
+          "default": [],
+          "help": "凹开局时希望在开局奖励阶段得到的密文板。仅在主题为 Sami 且模式为 4 时有效。 仅当开局拥有列表中所有的密文板时才算凹开局成功。 注意，此参数须与 “生活至上分队” 同时使用，其他分队在开局奖励阶段不会获得密文板。",
+          "group": "advanced",
+          "protocol": {
+            "type": "array",
+            "required": false
+          }
+        },
+        {
+          "id": "collectible_mode_start_list",
+          "type": "multi",
+          "label": "刷开局期望奖励",
+          "default": {},
+          "help": "凹开局时期望的奖励，默认全为 false。仅在模式为 4 时有效。 hot_water: 热水壶奖励，常用于触发烧水机制（通用）。 shield: 护盾奖励，约等于额外生命值（通用）。 ingot: 源石锭奖励（通用）。 hope: 希望奖励（通用，注意：JieGarden 主题下无 hope 奖励）。 random: 随机奖励",
+          "group": "basic",
+          "protocol": {
+            "type": "object",
+            "required": false
+          },
+          "choices": [
+            {
+              "value": "游戏中指“消耗所有源石锭换一个随机收藏品”（通用）。",
+              "label": "游戏中指“消耗所有源石锭换一个随机收藏品”（通用）。"
+            }
+          ]
+        },
+        {
+          "id": "use_foldartal",
+          "type": "switch",
+          "label": "使用密文板",
+          "default": false,
+          "help": "是否使用密文板。模式 5 下默认值 false，其他模式下默认值 true。仅适用于 Sami 主题。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "check_collapsal_paradigms",
+          "type": "switch",
+          "label": "识别坍缩范式",
+          "default": false,
+          "help": "是否检测获取的坍缩范式。模式 5 下默认值 true，其他模式下默认值 false。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "double_check_collapsal_paradigms",
+          "type": "switch",
+          "label": "二次确认坍缩范式",
+          "default": true,
+          "help": "是否执行坍缩范式检测防漏措施。仅在主题为 Sami 且 check_collapsal_paradigms 为 true 时有效。模式 5 下默认值 true，其他模式下默认值 false。",
+          "group": "advanced",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "expected_collapsal_paradigms",
+          "type": "json",
+          "label": "期望的坍缩范式列表",
+          "default": [],
+          "help": "希望触发的坍缩范式。仅在主题为 Sami 且模式为 5 时有效。",
+          "group": "advanced",
+          "protocol": {
+            "type": "array",
+            "required": false
+          }
+        },
+        {
+          "id": "monthly_squad_auto_iterate",
+          "type": "switch",
+          "label": "月度小队自动切换",
+          "default": false,
+          "help": "是否启动月度小队自动切换。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "monthly_squad_check_comms",
+          "type": "switch",
+          "label": "月度小队通讯",
+          "default": false,
+          "help": "是否将月度小队通信也作为切换依据。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "deep_exploration_auto_iterate",
+          "type": "switch",
+          "label": "深入调查自动切换",
+          "default": false,
+          "help": "是否启动深入调查自动切换。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "collectible_mode_shopping",
+          "type": "switch",
+          "label": "刷开局模式启用购物",
+          "default": false,
+          "help": "烧水是否启用购物。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "collectible_mode_squad",
+          "type": "text",
+          "label": "刷开局使用分队",
+          "default": "",
+          "help": "烧水时使用的分队, 默认与squad同步, 当squad为空字符串且未指定collectible_mode_squad值时为指挥分队。",
+          "group": "basic",
+          "protocol": {
+            "type": "string",
+            "required": false
+          }
+        },
+        {
+          "id": "start_with_seed",
+          "type": "text",
+          "label": "启用刷钱种子（美愿）",
+          "default": "",
+          "help": "使用种子刷钱时填入固定种子，留空则不启用。 仅在 Sarkaz 主题，Investment 模式，“点刺成锭分队” or “后勤分队” 时生效。",
+          "group": "advanced",
+          "protocol": {
+            "type": "string",
+            "required": false
+          }
+        },
+        {
+          "id": "blackflow_strategy",
+          "type": "text",
+          "label": "黑流树海策略",
+          "default": "",
+          "help": "黑流树海主题的策略；留空时按 mode 与 investment_enabled 推断。 baby_animal - 第一层检查普通商店，第二、三层探索并进入秘境行商培育种子，需配合 blackflow_cultivation_target investment - 第一层以战斗次数最少、预计时间最短的完整路线抵达固定普通商店 burn_with_investment - 第一层完成投资后尽快抵达第三层，到达即重开 burn - 尽快抵达第三层，到达即重开",
+          "group": "basic",
+          "protocol": {
+            "type": "string",
+            "required": false
+          }
+        },
+        {
+          "id": "blackflow_cultivation_target",
+          "type": "text",
+          "label": "培养目标",
+          "default": "swaddled_cat",
+          "help": "刷襁褓动物模式的目标。可选值：swaddled_cat | swaddled_feathered_serpent | swaddled_dog | swaddled_cerberus；仅在 blackflow_strategy 为 baby_animal 时使用。",
+          "group": "basic",
+          "protocol": {
+            "type": "string",
+            "required": false
+          }
+        },
+        {
+          "id": "find_playTime_target",
+          "type": "counter",
+          "label": "目标襁褓动物",
+          "default": 0,
+          "help": "刷常乐节点模式的目标常乐节点。1 - 令（掷地有声）；2 - 黍（种因得果）；3 - 年（三缺一）。仅在主题为 JieGarden 且模式为 20001 时使用，该模式下必填；不填或其他值会导致任务参数设置失败。",
+          "group": "advanced",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "min": 0,
+          "max": 100000
+        }
       ]
     },
     {
       "id": "reclamation",
       "name": "生息演算",
-      "taskType": "ReclamationAlgorithm",
-      "description": "自动生息演算（沙中之火模式）。",
+      "taskType": "Reclamation",
+      "description": "自动生息演算（沙中之火）。",
       "options": [
-        { "id": "mode", "type": "select", "label": "模式", "default": 1, "choices": [ { "value": 0, "label": "不开启" }, { "value": 1, "label": "自动计算最优路径" } ] }
+        {
+          "id": "theme",
+          "type": "text",
+          "label": "生息演算主题",
+          "default": "Tales",
+          "help": "主题。 Fire - _沙中之火_（已关闭） Tales - _沙洲遗闻_ RelaunchAnchor - _重启锚点_",
+          "group": "basic",
+          "protocol": {
+            "type": "string",
+            "required": false
+          }
+        },
+        {
+          "id": "mode",
+          "type": "select",
+          "label": "模式",
+          "default": 0,
+          "help": "模式。不同主题支持的模式不同： Tales（沙洲遗闻）： 0 - 无存档，通过进出关卡刷生息点数。 1 - 有存档，通过组装支援道具刷生息点数。 RelaunchAnchor（重启锚点）： 16 (RA1) - RA-1，自动执行精耕细作、建设、交付资源、结算循环。 32 (RA15) - RA-15，用圣聆初雪完成 60 杀任务。 48 (RA4) - RA-4，使用筹划经营策略给予的赤金解锁区域，使用维什戴尔完成击杀 boss 任务。",
+          "group": "basic",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "choices": [
+            {
+              "value": "0",
+              "label": "不开启"
+            },
+            {
+              "value": "1",
+              "label": "自动计算最优路径"
+            }
+          ]
+        },
+        {
+          "id": "tools_to_craft",
+          "type": "json",
+          "label": "支援道具",
+          "default": [],
+          "help": "自动制造的物品，建议填写子串，留空则不制造。仅 Tales 主题的有存档模式（mode = 1）有效。",
+          "group": "basic",
+          "protocol": {
+            "type": "array",
+            "required": false
+          }
+        },
+        {
+          "id": "clear_store",
+          "type": "switch",
+          "label": "任务完成后购买商店",
+          "default": false,
+          "help": "任务完成后是否购买（清空）商店商品。仅 Tales 主题的无存档模式（mode = 0）有效。",
+          "group": "basic",
+          "protocol": {
+            "type": "boolean",
+            "required": false
+          }
+        },
+        {
+          "id": "increment_mode",
+          "type": "select",
+          "label": "荧光棒增加方式",
+          "default": 0,
+          "help": "点击类型。仅 Tales 主题有效。 0 - 连点 1 - 长按",
+          "group": "basic",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "choices": [
+            {
+              "value": "0",
+              "label": "逐个放置"
+            },
+            {
+              "value": "1",
+              "label": "连续放置"
+            }
+          ]
+        },
+        {
+          "id": "num_craft_batches",
+          "type": "counter",
+          "label": "单次最大组装轮数",
+          "default": 16,
+          "help": "单次最大制造轮数。仅 Tales 主题有效。",
+          "group": "basic",
+          "protocol": {
+            "type": "number",
+            "required": false
+          },
+          "min": 0,
+          "max": 100000
+        }
+      ]
+    },
+    {
+      "id": "depot",
+      "name": "仓库识别",
+      "taskType": "Depot",
+      "description": "识别仓库材料并导出数据。",
+      "options": []
+    },
+    {
+      "id": "operbox",
+      "name": "干员识别",
+      "taskType": "OperBox",
+      "description": "识别当前账号干员列表。",
+      "options": []
+    },
+    {
+      "id": "switchtheme",
+      "name": "更换主题",
+      "taskType": "SwitchTheme",
+      "description": "切换游戏主界面主题。",
+      "options": [
+        {
+          "id": "themes",
+          "type": "text",
+          "label": "主题名称",
+          "default": "",
+          "help": "候选主题名称列表，需与游戏内主题列表中显示的名称一致；包含多个时每次运行随机选择一个，为空数组时跳过本任务。",
+          "group": "basic",
+          "protocol": {
+            "type": "string",
+            "required": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "custom",
+      "name": "自定任务",
+      "taskType": "Custom",
+      "description": "执行 interface.json 中定义的自定义任务。",
+      "options": [
+        {
+          "id": "task_names",
+          "type": "json",
+          "label": "任务名（interface.json）",
+          "default": [],
+          "help": "执行数组中第一个匹配上的任务（及后续 next 等）。若想执行多个任务，可多次 append Custom task。 支持秘密前线（MiniGame@SecretFront）拼接形式：MiniGame@SecretFront@Begin@EndingA-E?，事件名可选（支援作战平台 / 游侠 / 诡影迷踪），例如 MiniGame@SecretFront@Begin@EndingA@支援作战平台。",
+          "group": "basic",
+          "protocol": {
+            "type": "array",
+            "required": true
+          }
+        },
+        {
+          "id": "params",
+          "type": "json",
+          "label": "任务参数（JSON）",
+          "default": {},
+          "help": "任务附加参数。目前仅像素画任务（MiniGame - params.pixel_paint.groups：按色分组点列。color 为色板序号（0~39，与游戏右侧色板顺序一致），points 为 [x, y] 格子坐标数组（0~23，左上为原点）。 - params.pixel_paint.swipe（bool，可选，默认 true）：同色同行连续格用拖动一次画完，更快但部分触控模式可能异常。 - params.pixel_paint.grid_delay（int，可选，默",
+          "group": "advanced",
+          "protocol": {
+            "type": "object",
+            "required": false
+          }
+        }
       ]
     }
   ]
