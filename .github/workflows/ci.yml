@@ -28,6 +28,13 @@ jobs:
           cp deploy/.env.example deploy/.env
           cd deploy && docker compose config -q
 
+  readme-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check README feature-parity tables are generated from feature-parity.json
+        run: python3 scripts/gen-readme-parity.py --check
+
   image-build-check:
     runs-on: ubuntu-latest
     strategy:

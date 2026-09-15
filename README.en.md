@@ -33,8 +33,104 @@ from the official MAA GitHub release and verifies it with SHA-256 into a persist
 - Scheduling only stores entries; there is no server-side scheduler. Queue-level actions (post-action, timeout reminders) are missing
 - **No authentication at all**: run it on a trusted LAN only, never expose it to the internet
 
-The full checklist lives in the "Feature parity" page of the Web UI, backed by
-[`apps/maa-server/src/feature-parity.json`](apps/maa-server/src/feature-parity.json) (baseline: MAA v6.17.5 desktop).
+## Feature parity (vs MAA v6.17.5 desktop)
+
+Generated from [`apps/maa-server/src/feature-parity.json`](apps/maa-server/src/feature-parity.json) — the same data that drives the "Feature parity" page in the Web UI. After editing the data run `python3 scripts/gen-readme-parity.py` (CI fails if this table is stale).
+
+<!-- parity:begin -->
+Summary: **15 done** · 10 partial · 26 missing · 5 desktop-only (of 56)
+
+### Execution pipeline (the foundation)
+
+| Feature | Status |
+|---|---|
+| MaaCore C API FFI (full AsstCaller.h) | ✅ Done |
+| Resource loading (AsstLoadResource) | ✅ Done |
+| Device connection (AsstAsyncConnect, ADB) | ✅ Done |
+| Task dispatch (AsstAppendTask + param mapping) | ✅ Done |
+| Start / stop (AsstStart, AsstStop) | ✅ Done |
+| Native callback logs (task chain / subtask events) | ✅ Done |
+| Screencap / live view | ❌ Missing |
+
+### Task queue · 12 tasks (desktop list)
+
+| Feature | Status |
+|---|---|
+| StartUp (account switch / launch client) | ❌ Missing |
+| Fight (sanity farming) | 🟡 Partial |
+| Infrast (base shift) | 🟡 Partial |
+| Award (daily rewards) | ✅ Done |
+| Mall (credit store) | 🟡 Partial |
+| Recruit (auto) | 🟡 Partial |
+| Roguelike (auto) | 🟡 Partial |
+| Reclamation Algorithm | 🟡 Partial |
+| Custom task (interface.json) | ❌ Missing |
+| Switch theme (in-game skin) | ❌ Missing |
+| Depot maintain (farming plan) | ❌ Missing |
+| User data sync | ❌ Missing |
+
+### Task queue · global actions
+
+| Feature | Status |
+|---|---|
+| Multiple instances / copy / rename / drag-sort | ❌ Missing |
+| Select all | ❌ Missing |
+| Wait & stop | ❌ Missing |
+| Post-action (exit game/emulator, shutdown, sleep…) | ❌ Missing |
+| Task timeout reminder | ❌ Missing |
+| Today's stage hint | ❌ Missing |
+| Auto reload resources | ❌ Missing |
+| Scheduled runs | 🟡 Partial |
+
+### Copilot page
+
+| Feature | Status |
+|---|---|
+| Copilot path / mystery code | ❌ Missing |
+| Multi-job mode / bulk import | ❌ Missing |
+| Video recognition | ❌ Missing |
+| Auto squad / support / low-trust fill / modules | ❌ Missing |
+| Job sharing / rating | ❌ Missing |
+
+### Toolbox page
+
+| Feature | Status |
+|---|---|
+| Recruitment recognition (tags / timer) | ❌ Missing |
+| Depot recognition (JSON export) | ❌ Missing |
+| Operator recognition | ❌ Missing |
+| Gacha / Peep / MiniGame | ⚪ Desktop-only |
+
+### Settings (15 desktop groups)
+
+| Feature | Status |
+|---|---|
+| General (client type) | ✅ Done |
+| Connection settings | 🟡 Partial |
+| Startup settings | ✅ Done |
+| Timer settings (per-profile schedules) | 🟡 Partial |
+| External notifications (SMTP/TG/Discord/…) | ❌ Missing |
+| Remote control (task endpoints) | ❌ Missing |
+| Hotkey settings | ⚪ Desktop-only |
+| Performance settings | ❌ Missing |
+| Game settings | ❌ Missing |
+| GUI / background settings | ⚪ Desktop-only |
+| Version update settings | 🟡 Partial |
+| Profile management (multiple configs) | ❌ Missing |
+| Achievements | ⚪ Desktop-only |
+| Issue report | ⚪ Desktop-only |
+| About | ✅ Done |
+
+### Infrastructure (web-specific)
+
+| Feature | Status |
+|---|---|
+| Official runtime download / SHA-256 verification | ✅ Done |
+| Containerised deployment (nginx + node) | ✅ Done |
+| Live log stream (WebSocket) | ✅ Done |
+| windows-ui component system (vendored official dist) | ✅ Done |
+| Feature parity page (this section) | ✅ Done |
+<!-- parity:end -->
 
 ## Architecture
 
