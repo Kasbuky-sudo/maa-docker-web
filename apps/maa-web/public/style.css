@@ -1074,3 +1074,18 @@ body {
 }
 .mdw-tool-notice b { color: var(--mdw-text); }
 [data-theme="dark"] .mdw-tool-notice { background: #323232; }
+
+/* 理智作战周计划 */
+.mdw-wp-rows { display: block; margin-top: 8px; }
+.mdw-wp-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; }
+.mdw-wp-row .mdw-check { flex: 0 0 74px; }
+.mdw-wp-row .app-input-text { flex: 1 1 auto; min-width: 0; }
+.mdw-wp-row.today .mdw-check > span { color: var(--mdw-accent); font-weight: 600; }
+.mdw-wp-today { font-size: 12.5px; color: var(--mdw-accent); margin-bottom: 6px; }
+
+/* 实时画面（ADB screencap） */
+.mdw-scr img { background: #000; }
+.mdw-scr-err {
+  position: absolute; left: 0; right: 0; top: 45%; text-align: center; font-size: 13px;
+  color: #fff; background: rgba(0,0,0,.55); padding: 6px 10px; text-shadow: 0 1px 2px rgba(0,0,0,.5);
+}

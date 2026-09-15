@@ -158,6 +158,17 @@ const routes = {
     for (const [taskId, opts] of Object.entries(body)) {
       if (taskId === '_meta') continue;
       if (!validIds.has(taskId) || typeof opts !== 'object' || Array.isArray(opts)) continue;
+      if (taskId === 'fight' && opts.weekly_plan && typeof opts.weekly_plan === 'object') {
+        // 理智作战「周计划」：桌面端是 GUI 概念，协议无对应字段，由服务端在
+        // 下发 Fight 任务时按当天星期展开成 stage。这里白名单放行并做清洗。
+        const wp = { enabled: !!opts.weekly_plan.enabled };
+        for (const day of ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']) {
+          const list = Array.isArray(opts.weekly_plan[day]) ? opts.weekly_plan[day] : [];
+          wp[day] = list.map((x) => String(x).slice(0, 32)).filter(Boolean).slice(0, 12);
+        }
+        clean.fight = { ...opts, weekly_plan: wp };
+        continue;
+      }
       clean[taskId] = opts;
     }
     // queue-level options (post action, etc.)
@@ -204,6 +215,42 @@ const routes = {
       },
       jobs: list,
     };
+  },
+
+  /* ---- 设备截图：ADB screencap，直接返回 PNG（监控 / 实时画面用） ---- */
+  'GET /api/device/screenshot': (req, url, res) => {
+    const conn = readConnection();
+    const address = conn.address;
+    if (!address) {
+      res.writeHead(409, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: '尚未配置设备地址' }));
+      return true;
+    }
+    const adbPath = conn.adbPath || '/usr/bin/adb';
+    const { spawn } = require('node:child_process');
+    const proc = spawn(adbPath, ['-s', address, 'exec-out', 'screencap', '-p'], { timeout: 15000 });
+    const chunks = [];
+    let failed = null;
+    proc.stdout.on('data', (c) => chunks.push(c));
+    proc.stderr.on('data', (c) => { failed = String(c); });
+    proc.on('error', (e) => {
+      if (!res.headersSent) {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `adb 启动失败: ${e.message}` }));
+      }
+    });
+    proc.on('close', (code) => {
+      if (res.headersSent) return;
+      const buf = Buffer.concat(chunks);
+      if (code !== 0 || !buf.length) {
+        res.writeHead(502, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `screencap 失败（exit ${code}）${failed ? ': ' + failed.slice(0, 120) : ''}` }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+      res.end(buf);
+    });
+    return true; // 已手工接管响应
   },
 
   async 'POST /api/copilot/start'(req) {

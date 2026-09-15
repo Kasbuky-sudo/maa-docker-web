@@ -395,6 +395,14 @@ async function runTask(jobs, opts = {}) {
   return snapshot();
 }
 
+/** 周计划：按今天星期取关卡列表（weekly_plan: {enabled, mon..sun: [关卡]}） */
+function weeklyStagesFor(plan, date) {
+  const keys = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  const list = plan[keys[date.getDay()]];
+  if (!Array.isArray(list)) return [];
+  return list.map((x) => String(x).trim()).filter(Boolean);
+}
+
 async function start(selectedTaskIds) {
   if (busy()) throw Object.assign(new Error('已有任务在执行中'), { statusCode: 409 });
 
@@ -416,14 +424,34 @@ async function start(selectedTaskIds) {
   const saved = readTaskConfig();
 
   // merge catalog defaults + user config per task
-  const jobs = ids.map((id) => {
+  let jobs = ids.map((id) => {
     const t = byId.get(id);
     const defaults = {};
     for (const opt of t.options || []) {
       defaults[opt.id] = opt.choicesFrom ? catalog[opt.choicesFrom][0].value : opt.default;
     }
     const opts = Object.assign(defaults, saved[id] || {});
-    return { task: t, params: buildParams(t.taskType, opts, { connection: conn }) };
+    return { task: t, params: buildParams(t.taskType, opts, { connection: conn }), opts };
+  });
+
+  // 理智作战「周计划」：桌面端是 GUI 概念（协议无对应字段），
+  // 这里在服务端实现——启用后按当天星期取计划里的关卡，展开成多个 Fight 任务。
+  jobs = jobs.flatMap((j) => {
+    if (j.task.taskType !== 'Fight') return [j];
+    const plan = j.opts && j.opts.weekly_plan;
+    if (!plan || !plan.enabled) return [j];
+    const stages = weeklyStagesFor(plan, new Date());
+    if (!stages.length) {
+      logger.info('runner', `周计划已启用，但今天（周${'日一二三四五六'[new Date().getDay()]}）没有安排关卡，按原关卡执行`);
+      return [j];
+    }
+    logger.info('runner', `周计划命中：今天执行 ${stages.join(', ')}`);
+    return stages.map((stage, i) => ({
+      task: j.task,
+      params: Object.assign({}, j.params, { stage }),
+      label: `理智作战 ${stage}（周计划 ${i + 1}/${stages.length}）`,
+      opts: j.opts,
+    }));
   });
 
   state = { phase: 'loading', detail: '加载资源中', tasks: ids, startedAt: Date.now(), finishedAt: null };

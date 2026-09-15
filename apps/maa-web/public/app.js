@@ -350,6 +350,12 @@ function collectTaskConfig() {
       out[taskId][opt] = el.value;
     }
   });
+  // 理智作战周计划（协议无对应字段，服务端按当天星期展开成 stage）
+  var wpEn = document.getElementById('f-weekly-en');
+  if (wpEn) {
+    out.fight = out.fight || {};
+    out.fight.weekly_plan = collectWeeklyPlan();
+  }
   // 菲亚梅塔目标（3 个下拉合成数组）
   var fia = [1, 2, 3].map(function (i) {
     var s = document.getElementById('i-felyne-' + i);
@@ -426,6 +432,21 @@ function applyTaskConfig(root) {
       el.value = v;
     }
   });
+  // 理智作战周计划
+  if (taskId === 'fight' && cfg.weekly_plan) {
+    weeklyPlan = Object.assign({ enabled: false, mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] }, cfg.weekly_plan);
+    var wpHtml = document.getElementById('f-weekly-rows');
+    if (wpHtml) {
+      var en = document.getElementById('f-weekly-en');
+      if (en) en.checked = !!weeklyPlan.enabled;
+      wpHtml.style.display = weeklyPlan.enabled ? 'block' : 'none';
+      document.querySelectorAll('.mdw-wp-stages').forEach(function (inp) {
+        inp.value = (weeklyPlan[inp.dataset.day] || []).join(', ');
+        var chk = document.querySelector('.mdw-wp-day[data-day="' + inp.dataset.day + '"]');
+        if (chk) chk.checked = (weeklyPlan[inp.dataset.day] || []).length > 0;
+      });
+    }
+  }
   // 菲亚梅塔
   if (taskId === 'infrast' && Array.isArray(cfg.fiammetta_targets)) {
     cfg.fiammetta_targets.forEach(function (name, i) {
@@ -713,6 +734,7 @@ function configFight(tab) {
       blockHtml('关卡指定', selectHtml(STAGES, '1-7', 'f-stage'), '留空则识别当前/上次关卡。');
   }
   return headingHtml('理智作战 · 高级设置') +
+    blockHtml('关卡周计划', weeklyPlanHtml(), '桌面端同款功能：每天可以安排不同的关卡，开任务时自动按今天星期选择。') +
     blockHtml('自定义剿灭关卡', checkHtml('', false, 'f-anni-check') + selectHtml(ANNIHILATION_STAGES, 'Annihilation', 'f-anni')) +
     rowHtml(checkHtml('博朗台模式', false, 'f-diplomat') + helpHtml('先刷已恢复理智，再使用理智药。')) +
     rowHtml(checkHtml('无限吃 N 小时内过期的理智药', false, 'f-expire-medicine') + selectHtml([['24', '24h×1'], ['48', '24h×2'], ['72', '24h×3'], ['96', '24h×4'], ['120', '24h×5'], ['144', '24h×6'], ['168', '24h×7']], '48', 'f-em-hours')) +
@@ -908,6 +930,45 @@ function configRoguelike(tab) {
     rowHtml(checkHtml('使用指定种子开局', false, 'rg-use-seed')) +
     subRowHtml(textHtml('rg-seed', '', '输入地图种子编号')) +
     rowHtml(checkHtml('自动肉鸽在战斗结束前延迟「停止」动作', false, 'rg-delay-stop'));
+}
+
+/* 理智作战「周计划」：桌面端 GUI 概念，协议无对应字段 → 服务端按当天星期展开成 stage */
+var WEEK_DAYS = [
+  ['mon', '周一'], ['tue', '周二'], ['wed', '周三'], ['thu', '周四'],
+  ['fri', '周五'], ['sat', '周六'], ['sun', '周日']
+];
+var weeklyPlan = { enabled: false, mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] };
+
+function weeklyPlanHtml() {
+  var todayKey = WEEK_DAYS[(new Date().getDay() + 6) % 7][0];   // 周一为一周开头
+  var rows = WEEK_DAYS.map(function (d) {
+    var stages = (weeklyPlan[d[0]] || []).join(', ');
+    return '<div class="mdw-wp-row' + (d[0] === todayKey ? ' today' : '') + '">' +
+      '<label class="mdw-check"><input type="checkbox" class="app-checkbox mdw-wp-day" data-day="' + d[0] + '"' +
+        ((weeklyPlan[d[0]] || []).length ? ' checked' : '') + '/><span>' + d[1] + '</span></label>' +
+      '<input type="text" class="app-input-text mdw-wp-stages" data-day="' + d[0] + '" value="' + esc(stages) + '" placeholder="关卡，逗号分隔，如 1-7,CE-6"/>' +
+    '</div>';
+  }).join('');
+  return '<div class="mdw-wp">' +
+    '<label class="mdw-check"><input type="checkbox" class="app-checkbox" id="f-weekly-en"' +
+      (weeklyPlan.enabled ? ' checked' : '') + '/><span>启用周计划</span></label>' +
+    '<div class="mdw-wp-rows" id="f-weekly-rows" style="display:' + (weeklyPlan.enabled ? 'block' : 'none') + '">' +
+      '<div class="mdw-wp-today" id="f-weekly-today"></div>' +
+      rows +
+      '<div class="mdw-muted" style="font-size:12px;margin-top:6px">启用后，开任务时按今天星期自动选择对应关卡（可多个），替代上方「当前关卡」。</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function collectWeeklyPlan() {
+  var plan = { enabled: false, mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] };
+  var en = document.getElementById('f-weekly-en');
+  plan.enabled = !!(en && en.checked);
+  document.querySelectorAll('.mdw-wp-stages').forEach(function (inp) {
+    var day = inp.dataset.day;
+    plan[day] = inp.value.split(/[,，;；\s]+/).map(function (x) { return x.trim(); }).filter(Boolean);
+  });
+  return plan;
 }
 
 /* --- 生息演算（主题/模式/提示全部来自 MAA_DATA.reclamation） --- */
@@ -1795,6 +1856,29 @@ function bindConfigEvents(el) {
   // 更换主题：动态主题名列表
   bindSwitchThemeEvents(el);
 
+  // 理智作战周计划交互
+  var wpEn2 = el.querySelector('#f-weekly-en');
+  if (wpEn2) {
+    var refreshWp = function () {
+      var rows2 = el.querySelector('#f-weekly-rows');
+      if (rows2) rows2.style.display = wpEn2.checked ? 'block' : 'none';
+      var hint = document.getElementById('f-weekly-today');
+      if (hint) {
+        var dayIdx = (new Date().getDay() + 6) % 7;      // 周一=0
+        var key = WEEK_DAYS[dayIdx][0];
+        var stages = (weeklyPlan[key] || []).join(', ');
+        hint.textContent = wpEn2.checked
+          ? '今天（' + WEEK_DAYS[dayIdx][1] + '）：' + (stages || '未安排，将按上方「当前关卡」执行')
+          : '';
+      }
+    };
+    wpEn2.addEventListener('change', refreshWp);
+    el.querySelectorAll('.mdw-wp-stages').forEach(function (inp) {
+      inp.addEventListener('input', refreshWp);
+    });
+    refreshWp();
+  }
+
   var rcTheme = el.querySelector('#rc-theme');
   if (rcTheme) {
     refreshReclDependent();
@@ -2646,6 +2730,7 @@ function pageTools(el) {
       toolsTab = t.dataset.tab;
       el.querySelectorAll('#tools-tabs .mdw-tools-tab').forEach(function (x) { x.classList.toggle('active', x === t); });
       if (toolsTab === 'resource') loadRuntimeInfo();
+      stopLive();
       el.querySelector('#tools-body').innerHTML = renderToolsContent();
       bindToolsEvents(el);
     });
@@ -2839,12 +2924,57 @@ function toolsDepotContent() {
 }
 
 /* ============ 牛牛抽卡 / 牛牛监控 ============ */
-function mockScreen(fps) {
+/* 实时画面：ADB screencap（GET /api/device/screenshot），按目标帧率刷新 */
+var LIVE = { timer: null, frames: 0, lastFpsAt: 0, running: false };
+
+function liveScreenHtml() {
   return '<div class="mdw-scr">' +
-      '<span class="mdw-scr-fps">' + fps + ' FPS</span>' +
-      '<div class="mdw-scr-noise"></div>' +
-      '<div class="mdw-scr-hint">设备画面（未连接设备时显示占位）</div>' +
+      '<img id="scr-img" alt="设备画面" style="width:100%;height:100%;object-fit:contain;display:block"/>' +
+      '<span class="mdw-scr-fps" id="scr-fps">0.00 FPS</span>' +
+      '<span class="mdw-scr-err" id="scr-err"></span>' +
     '</div>';
+}
+
+function stopLive() {
+  LIVE.running = false;
+  clearTimeout(LIVE.timer);
+}
+
+/* frames=0 表示占位背景；否则开始按帧率拉取截图 */
+function startLive(fps) {
+  var img = document.getElementById('scr-img');
+  var errEl = document.getElementById('scr-err');
+  var fpsEl = document.getElementById('scr-fps');
+  if (!img) return;
+  var interval = Math.max(200, Math.round(1000 / Math.max(0.5, fps || 1)));
+  LIVE.running = true;
+  LIVE.frames = 0;
+  LIVE.lastFpsAt = Date.now();
+
+  function tick() {
+    if (!LIVE.running) return;
+    var probe = new Image();
+    probe.onload = function () {
+      img.src = probe.src;
+      LIVE.frames += 1;
+      var now = Date.now();
+      if (now - LIVE.lastFpsAt >= 1000) {
+        var fps2 = (LIVE.frames * 1000) / (now - LIVE.lastFpsAt);
+        if (fpsEl) fpsEl.textContent = fps2.toFixed(2) + ' FPS';
+        LIVE.frames = 0;
+        LIVE.lastFpsAt = now;
+      }
+      if (errEl) errEl.textContent = '';
+      LIVE.timer = setTimeout(tick, interval);
+    };
+    probe.onerror = function () {
+      if (errEl) errEl.textContent = '获取画面失败：设备未连接或 adb 不可用';
+      if (fpsEl) fpsEl.textContent = '0.00 FPS';
+      LIVE.timer = setTimeout(tick, Math.max(2000, interval * 4));
+    };
+    probe.src = '/api/device/screenshot?t=' + Date.now();
+  }
+  tick();
 }
 
 function toolsGachaContent() {
@@ -2859,7 +2989,7 @@ function toolsGachaContent() {
       '</div>';
   } else {
     body = '<div class="mdw-gacha-lore" id="gacha-tip">' + esc(GACHA_TIP) + '</div>' +
-      mockScreen('0.00') +
+      liveScreenHtml() +
       '<div class="mdw-gacha-actions">' +
         '<button type="button" class="app-btn" id="gacha-once" disabled>寻访一次</button>' +
         '<button type="button" class="app-btn" id="gacha-ten" disabled>寻访十次</button>' +
@@ -2880,7 +3010,7 @@ var GACHA_TIP = '在罗德岛竟然有这么多志同道合的志士。是的，
 function toolsMonitorContent() {
   var st = TOOL_STATE.monitor;
   var body = st.playing
-    ? mockScreen('0.00') + '<div class="mdw-monitor-bottom"><button type="button" class="app-btn mdw-monitor-stop" id="monitor-stop">Stop!</button>' + monitorFps() + '</div>'
+    ? liveScreenHtml() + '<div class="mdw-monitor-bottom"><button type="button" class="app-btn mdw-monitor-stop" id="monitor-stop">Stop!</button>' + monitorFps() + '</div>'
     : '<div class="mdw-monitor-prompt">看看牛牛眼中的世界?</div>' +
       '<div class="mdw-monitor-center"><button type="button" class="app-btn mdw-gacha-peep" id="monitor-peep">Peep!</button>' + monitorFps() + '</div>';
   return '<div class="mdw-tool">' +
@@ -3025,6 +3155,7 @@ function bindToolsEvents(el) {
     TOOL_STATE.gacha.started = true;
     el.querySelector('#tools-body').innerHTML = renderToolsContent();
     bindToolsEvents(el);
+    startLive(1);
   });
   var gachaStop = el.querySelector('#gacha-stop');
   if (gachaStop) gachaStop.addEventListener('click', function () {
@@ -3042,9 +3173,28 @@ function bindToolsEvents(el) {
   });
   var mstop = el.querySelector('#monitor-stop');
   if (mstop) mstop.addEventListener('click', function () {
+    stopLive();
     TOOL_STATE.monitor.playing = false;
     el.querySelector('#tools-body').innerHTML = renderToolsContent();
     bindToolsEvents(el);
+  });
+  // 抽卡页停止按钮
+  var gstop = el.querySelector('#gacha-stop');
+  if (gstop) gstop.addEventListener('click', function () {
+    stopLive();
+    TOOL_STATE.gacha.started = false;
+    el.querySelector('#tools-body').innerHTML = renderToolsContent();
+    bindToolsEvents(el);
+  });
+  // 目标帧率变化 → 实时生效
+  var fpsInput = el.querySelector('#m-fps');
+  if (fpsInput) fpsInput.addEventListener('change', function () {
+    if (TOOL_STATE.monitor.playing) {
+      stopLive();
+      TOOL_STATE.monitor.playing = true;
+      el.querySelector('#tools-body').innerHTML = renderToolsContent();
+      bindToolsEvents(el);
+    }
   });
 
   // 牛杂：选择小游戏
