@@ -122,14 +122,65 @@ function readTaskConfig() {
 // the official protocol document (scripts/gen-task-catalog.py) — so params stay
 // in sync with MAA instead of being hand-mapped here.
 const SPEC = require('./maa-task-spec.json');
+const TASK_UI = require('./task-ui.json');
 
-function buildParams(taskType, opts) {
+// GUI 控件（task-ui.json，逐项对照 MaaWpfGui XAML）-> 协议字段取值
+function controlValue(ctl, opts) {
+  const v = opts[ctl.id];
+  switch (ctl.kind) {
+    case 'check':
+      return ctl.bind ? !!v : undefined;
+    case 'check-number':
+      return ctl.bind ? (v ? Number(opts[ctl.id + 'Value'] ?? ctl.number.default) : ctl.number.valueWhenOff) : undefined;
+    case 'check-select':
+      return ctl.bind ? (v ? opts[ctl.id + 'Value'] : undefined) : undefined;
+    case 'select':
+    case 'text':
+      return ctl.bind ? v : undefined;
+    default:
+      return undefined;
+  }
+}
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// Fight 的关卡来源优先级：自定义剿灭 > 周计划（按当天） > 手动输入 > 关卡指定
+function resolveStage(opts, params) {
+  if (opts.UseCustomAnnihilation && opts.AnnihilationStage) return opts.AnnihilationStage;
+  if (opts.UseWeeklySchedule && opts.WeeklySchedule && typeof opts.WeeklySchedule === 'object') {
+    const day = WEEKDAYS[new Date().getDay()];
+    if (opts.WeeklySchedule[day]) return opts.WeeklySchedule[day];
+  }
+  if (opts.CustomStageCode && opts.StageCode) return String(opts.StageCode);
+  return opts.Stage !== undefined ? opts.Stage : params.stage;
+}
+
+function buildParams(taskType, opts, extra) {
   const o = opts || {};
   const spec = SPEC.tasks[taskType];
   const params = { enable: true };
-  if (!spec) return params;
-  for (const f of spec.fields) {
-    if (f.name === 'enable') continue;
+  const ui = TASK_UI.tasks[taskType];
+
+  // 1) 界面控件显式绑定的字段（MAA 桌面端同一套语义）
+  if (ui) {
+    for (const ctl of [...ui.basic, ...ui.advanced]) {
+      if (!ctl.bind) continue;
+      const v = controlValue(ctl, o);
+      if (v !== undefined && v !== '' && v !== null) params[ctl.bind] = v;
+    }
+  }
+  if (taskType === 'Fight') {
+    const stage = resolveStage(o, params);
+    if (stage !== undefined && stage !== '') params.stage = stage; else delete params.stage;
+    // 活动结束前 48H 吃当周过期理智药：近似为 2 天窗口（MAA 内部按活动剩余天数动态计算）
+    if (o.UseExpireMedicineForActivity) {
+      params.medicine_expire_days = Math.max(Number(params.medicine_expire_days) || 0, 2);
+    }
+  }
+
+  // 2) 其余协议字段（未出现在界面布局里的，按 spec 类型强转）
+  for (const f of (spec ? spec.fields : [])) {
+    if (f.name === 'enable' || params[f.name] !== undefined) continue;
     if (!(f.name in o)) continue;
     const v = o[f.name];
     switch (f.type) {
@@ -155,8 +206,16 @@ function buildParams(taskType, opts) {
         if (v !== '' && v != null) params[f.name] = String(v);
     }
   }
-  // client_type is required by StartUp/CloseDown and usually wanted by Fight
-  if (!params.client_type && ['StartUp', 'Fight', 'Recruit'].includes(taskType)) params.client_type = 'Official';
+
+  // 3) 多任务共享项
+  const conn = (extra && extra.connection) || readConnection();
+  if (['StartUp', 'Fight', 'Recruit'].includes(taskType) && !params.client_type) {
+    params.client_type = conn.clientType || 'Official';
+  }
+  if (taskType === 'StartUp') {
+    if (o.AccountSwitchEnabled && o.AccountName) params.account_name = String(o.AccountName);
+    else delete params.account_name;
+  }
   return params;
 }
 
@@ -189,7 +248,8 @@ async function start(selectedTaskIds) {
     for (const opt of t.options || []) {
       defaults[opt.id] = opt.choicesFrom ? catalog[opt.choicesFrom][0].value : opt.default;
     }
-    return { task: t, params: buildParams(t.taskType, { ...defaults, ...(saved[id] || {}) }) };
+    const opts = Object.assign(defaults, saved[id] || {});
+    return { task: t, params: buildParams(t.taskType, opts, { connection: conn }) };
   });
 
   const cbRef = maaCore.registerCallback((msg, details, arg) => onCallback(msg, details, arg));
@@ -205,6 +265,19 @@ async function start(selectedTaskIds) {
   if (!handle) throw new Error('AsstCreateEx 失败：无法创建 MaaCore 实例');
   session = { handle, cbRef };
   logger.info('runner', `MaaCore 实例已创建（MAA ${f.getVersion()}），开始连接 ${conn.address}`);
+
+  // 实例级选项：触控模式(TouchMode=2) / 客户端类型(ClientType=6)
+  try {
+    if (conn.touchMode && f.setInstanceOption) {
+      const ok = f.setInstanceOption(handle, 2, String(conn.touchMode));
+      logger.info('runner', `触控模式设为 ${conn.touchMode}（${ok ? '成功' : '未接受'}）`);
+    }
+    if (conn.clientType && f.setInstanceOption) {
+      f.setInstanceOption(handle, 6, String(conn.clientType));
+    }
+  } catch (e) {
+    logger.warn('runner', `设置实例选项失败: ${e.message}`);
+  }
 
   state.phase = 'connecting';
   state.detail = '连接设备中';
@@ -231,8 +304,12 @@ async function start(selectedTaskIds) {
   // 只有 shutdown 取值有协议文档（None/Sleep/Hibernate/Shutdown）；
   // 退出游戏/模拟器为附加字段（MAA 对未知字段容错）。
   const postAction = (saved._meta && saved._meta.postAction) || 'None';
-  if (postAction !== 'None') {
-    const post = { client_type: 'Official' };
+  if (postAction === 'BackToHome') {
+    logger.info('runner', '完成后动作「返回模拟器主屏幕」：由 MaaCore 在任务结束时自动处理');
+  } else if (postAction === 'ExitMAA') {
+    logger.warn('runner', '完成后动作「退出 MAA」在 Web 版中无对应行为（服务端常驻），已忽略');
+  } else if (postAction !== 'None') {
+    const post = { client_type: conn.clientType || 'Official' };
     if (['Sleep', 'Hibernate', 'Shutdown'].includes(postAction)) post.shutdown = postAction;
     if (postAction === 'ExitGame') post.exit_game = true;
     if (postAction === 'ExitEmulator') post.exit_emulator = true;

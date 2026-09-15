@@ -87,6 +87,9 @@ function renderShell() {
   }
   const sbR = document.getElementById('sb-right');
   if (sbR) sbR.textContent = `${PHASE_LABEL[st.phase] || st.phase}${st.detail ? ' · ' + st.detail : ''}`;
+  // MAA 式「开始 / 停止」按钮状态
+  const startBtn = document.getElementById('q-run');
+  if (startBtn) startBtn.textContent = ['loading', 'connecting', 'running', 'stopping'].includes(st.phase) ? '停止' : '开始';
   const live = document.querySelector('.mdw-live');
   if (live) {
     const set = (sel, text) => { const el = live.querySelector(sel); if (el) el.textContent = text; };
@@ -186,6 +189,7 @@ async function bootShell() {
 
 // ----------------------------------------------------------- 任务页（一键长草工作台）
 let CATALOG = null;
+let TASK_UI = null;   // MAA 桌面端界面布局（逐项对照 MaaWpfGui XAML）
 let TCONF = {};      // { taskId: {optId: value}, _meta: {postAction} }
 let SELECTED = null;
 let saveTimer = null;
@@ -317,6 +321,154 @@ function previewParams(task) {
   return { task: task.taskType, params };
 }
 
+// ============ MAA 桌面端样式设置面板（逐项对照 MaaWpfGui XAML） ============
+const MAA_WEEKDAYS = [['Sun', '星期日'], ['Mon', '星期一'], ['Tue', '星期二'], ['Wed', '星期三'], ['Thu', '星期四'], ['Fri', '星期五'], ['Sat', '星期六']];
+
+function maaHelp(text) {
+  return text ? `<span class="mdw-help" title="${esc(text)}">?</span>` : '';
+}
+function maaLabel(text, help) {
+  return `<div class="mdw-maa-label">${esc(text)}${maaHelp(help)}</div>`;
+}
+function uiVal(taskId, key, fallback) {
+  const t = TCONF[taskId] || {};
+  return t[key] === undefined ? fallback : t[key];
+}
+function uiChoice(list, value) {
+  return (list || []).map((c) => `<option value="${esc(String(c.value))}" ${String(c.value) === String(value == null ? '' : value) ? 'selected' : ''}>${esc(c.label)}</option>`).join('');
+}
+
+// 单个控件的 HTML（MAA：勾选框在左，数值/下拉紧跟其后）
+function maaControl(ctl, taskId) {
+  const id = `u-${taskId}-${ctl.id}`;
+  const off = uiVal(taskId, ctl.id, ctl.kind === 'check' || ctl.kind.startsWith('check-') ? false : ctl.default);
+  const choices = ctl.choices || (ctl.choicesFrom ? TASK_UI[ctl.choicesFrom] : null);
+  const num = ctl.number || { min: 0, max: 9999, default: 0 };
+  const shown = ctl.showWhen ? !!uiVal(taskId, ctl.showWhen, false) : true;
+  const wrap = (inner, cls = '') => `<div class="mdw-maa-row ${cls}" data-showwhen="${ctl.showWhen || ''}" ${shown ? '' : 'hidden'}>${inner}</div>`;
+
+  if (ctl.kind === 'check') {
+    return wrap(`<label class="mdw-maa-check"><input type="checkbox" class="app-checkbox" id="${id}" ${off ? 'checked' : ''}/><span>${esc(ctl.label)}</span></label>${maaHelp(ctl.help)}`);
+  }
+  if (ctl.kind === 'check-number') {
+    const v = uiVal(taskId, ctl.id + 'Value', num.default);
+    return wrap(`<label class="mdw-maa-check"><input type="checkbox" class="app-checkbox" id="${id}" ${off ? 'checked' : ''}/><span>${esc(ctl.label)}</span></label>${maaHelp(ctl.help)}
+      <input type="number" class="app-input-text mdw-num" id="${id}-v" value="${esc(String(v))}" min="${num.min}" max="${num.max}"/>`);
+  }
+  if (ctl.kind === 'check-select') {
+    const v = uiVal(taskId, ctl.id + 'Value', (choices && choices[0]) ? choices[0].value : '');
+    return wrap(`<label class="mdw-maa-check"><input type="checkbox" class="app-checkbox" id="${id}" ${off ? 'checked' : ''}/><span>${esc(ctl.label)}</span></label>${maaHelp(ctl.help)}
+      <div class="app-select-menu mdw-maa-select"><select id="${id}-v">${uiChoice(choices, v)}</select></div>`);
+  }
+  if (ctl.kind === 'select') {
+    const v = uiVal(taskId, ctl.id, ctl.default);
+    return wrap(`${maaLabel(ctl.label, ctl.help)}<div class="app-select-menu mdw-maa-select"><select id="${id}">${uiChoice(choices, v)}</select></div>`, 'mdw-col');
+  }
+  if (ctl.kind === 'text') {
+    const v = uiVal(taskId, ctl.id, ctl.default || '');
+    return wrap(`${ctl.label ? maaLabel(ctl.label, ctl.help) : maaHelp(ctl.help)}
+      <input type="text" class="app-input-text mdw-maa-text" id="${id}" value="${esc(String(v))}" placeholder="${esc(ctl.placeholder || '')}"/>${ctl.browse ? '<button type="button" class="app-btn" disabled title="服务端容器内路径需手填">选择</button>' : ''}`,
+      ctl.label ? 'mdw-col' : '');
+  }
+  if (ctl.kind === 'weekdays') {
+    const week = uiVal(taskId, ctl.id, {}) || {};
+    return `<div class="mdw-maa-week" data-showwhen="${ctl.showWhen || ''}" ${shown ? '' : 'hidden'}>
+      ${MAA_WEEKDAYS.map(([k, label]) => `<div class="mdw-maa-weekrow"><span>${label}</span>
+        <div class="app-select-menu"><select data-weekday="${k}">${uiChoice(TASK_UI.stages, week[k] === undefined ? '1-7' : week[k])}</select></div></div>`).join('')}
+    </div>`;
+  }
+  return '';
+}
+
+function maaSharedBlock(taskId) {
+  const conn = SHELL.connection || {};
+  const list = TASK_UI.shared || [];
+  const pick = (id) => list.find((c) => c.id === id);
+  return `
+    <div class="mdw-maa-heading">以下选项为多任务共享</div>
+    ${maaControl({ id: 'StartGame', kind: 'check', label: '是否启动客户端', bind: 'start_game_enabled', help: '作用于整队任务。' }, taskId)}
+    <div class="mdw-maa-row mdw-col">${maaLabel('客户端类型', 'MAA 会根据客户端类型选择对应的资源与任务参数。')}
+      <div class="app-select-menu mdw-maa-select"><select id="c-clientType">${uiChoice(pick('clientType').choices, conn.clientType || 'Official')}</select></div></div>
+    <div class="mdw-maa-row mdw-col">${maaLabel('连接配置', pick('config').help)}
+      <div class="app-select-menu mdw-maa-select"><select id="c-config">${uiChoice(pick('config').choices, conn.config || 'General')}</select></div></div>
+    <div class="mdw-maa-row mdw-col">${maaLabel('ADB 路径', pick('adbPath').help)}
+      <input type="text" class="app-input-text mdw-maa-text" id="c-adbPath" value="${esc(conn.adbPath || '')}" placeholder="${esc(pick('adbPath').placeholder || '')}"/></div>
+    <div class="mdw-maa-row mdw-col">${maaLabel('连接地址', pick('address').help)}
+      <input type="text" class="app-input-text mdw-maa-text" id="c-address" value="${esc(conn.address || '')}" placeholder="${esc(pick('address').placeholder || '')}"/></div>
+    <div class="mdw-maa-row mdw-col">${maaLabel('触控模式', pick('touchMode').help)}
+      <div class="app-select-menu mdw-maa-select"><select id="c-touchMode">${uiChoice(pick('touchMode').choices, conn.touchMode || 'minitouch')}</select></div></div>
+    <div class="mdw-maa-row"><button type="button" class="app-btn" id="btn-shot-test" title="当前以连接测试代替（MaaCore AsstAsyncConnect 探活）">截图测试</button></div>`;
+}
+
+function renderMaaSettings(task, tab) {
+  const ui = TASK_UI.tasks[task.taskType];
+  const key = tab === 'adv' ? 'advanced' : 'basic';
+  const controls = (ui[key] || []).map((c) => maaControl(c, task.id)).join('');
+  const shared = (task.taskType === 'StartUp' && key === 'basic') ? maaSharedBlock(task.id) : '';
+  const empty = `<div class="mdw-maa-empty">${key === 'advanced' ? '该任务没有高级参数。' : '该任务没有常规参数。'}</div>`;
+  return `<div class="mdw-maa-scroll">${controls || (shared ? '' : empty)}${shared}</div>
+    <div class="mdw-maa-tabs">
+      <button type="button" class="mdw-maatab ${tab === 'basic' ? 'active' : ''}" data-tab="basic">常规设置</button>
+      <button type="button" class="mdw-maatab ${tab === 'advanced' ? 'active' : ''}" data-tab="adv">高级设置</button>
+    </div>`;
+}
+
+function bindMaaSettings(wrap, task) {
+  const ui = TASK_UI.tasks[task.taskType];
+  const store = (key, v) => {
+    TCONF[task.id] = TCONF[task.id] || {};
+    TCONF[task.id][key] = v;
+    saveTasksConfig();
+    refreshQueueSummary(task.id);
+  };
+  const applyVisibility = () => {
+    wrap.querySelectorAll('[data-showwhen]').forEach((node) => {
+      const key = node.getAttribute('data-showwhen');
+      if (!key) return;
+      node.hidden = !uiVal(task.id, key, false);
+    });
+  };
+  for (const ctl of [...(ui.basic || []), ...(ui.advanced || [])]) {
+    const id = `u-${task.id}-${ctl.id}`;
+    const box = wrap.querySelector(`#${id}`);
+    if (ctl.kind === 'check' && box) box.addEventListener('change', () => { store(ctl.id, box.checked); applyVisibility(); });
+    else if (ctl.kind === 'check-number' && box) {
+      box.addEventListener('change', () => { store(ctl.id, box.checked); applyVisibility(); });
+      const num = wrap.querySelector(`#${id}-v`);
+      if (num) num.addEventListener('change', () => store(ctl.id + 'Value', Number(num.value) || 0));
+    } else if (ctl.kind === 'check-select' && box) {
+      box.addEventListener('change', () => { store(ctl.id, box.checked); applyVisibility(); });
+      const sel = wrap.querySelector(`#${id}-v`);
+      if (sel) sel.addEventListener('change', () => store(ctl.id + 'Value', sel.value));
+    } else if (ctl.kind === 'select' && box) {
+      box.addEventListener('change', () => store(ctl.id, box.value));
+    } else if (ctl.kind === 'text' && box) {
+      box.addEventListener('input', () => store(ctl.id, box.value));
+    }
+  }
+  wrap.querySelectorAll('[data-weekday]').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      const week = Object.assign({}, uiVal(task.id, 'WeeklySchedule', {}));
+      week[sel.dataset.weekday] = sel.value;
+      store('WeeklySchedule', week);
+    });
+  });
+  // 多任务共享项
+  const conn = (key, v) => api.send('/api/connection', 'PUT', Object.assign({}, SHELL.connection, { [key]: v }))
+    .then(() => { SHELL.connection[key] = v; flashSaved('已保存'); refreshShell(); })
+    .catch((e) => flashSaved(e.message, true));
+  const bindConn = (id, key) => { const n = wrap.querySelector(`#${id}`); if (n) n.addEventListener('change', () => conn(key, n.value.trim ? n.value.trim() : n.value)); };
+  bindConn('c-clientType', 'clientType');
+  bindConn('c-config', 'config');
+  bindConn('c-adbPath', 'adbPath');
+  bindConn('c-address', 'address');
+  bindConn('c-touchMode', 'touchMode');
+  const shot = wrap.querySelector('#btn-shot-test');
+  if (shot) shot.addEventListener('click', () => testConnection(shot));
+  applyVisibility();
+}
+
+// 协议字段面板（用于 MAA 界面未覆盖的任务）
 function bindTaskOptions(root, task) {
   const write = (opt, v) => {
     TCONF[task.id] = TCONF[task.id] || {};
@@ -372,6 +524,19 @@ function refreshQueueSummary(taskId) {
 function renderMain(wrap) {
   const task = CATALOG.tasks.find((t) => t.id === SELECTED);
   const st = SHELL.runner || {};
+  const maaUi = TASK_UI && task && TASK_UI.tasks[task.taskType];
+  const statusLine = `${esc((st.connection && st.connection.address) || '未配置设备')} · MAA ${esc(st.maaVersion || '—')} · ${esc(PHASE_LABEL[st.phase] || st.phase)}`;
+
+  if (maaUi) {
+    wrap.innerHTML = `
+      <div class="mdw-maa-status">${statusLine}</div>
+      ${renderMaaSettings(task, activeTab)}
+      <div class="mdw-footline"><span class="mdw-muted" id="save-ind"></span></div>`;
+    wrap.querySelectorAll('.mdw-maatab').forEach((t) => t.addEventListener('click', () => { activeTab = t.dataset.tab; renderMain(wrap); }));
+    bindMaaSettings(wrap, task);
+    return;
+  }
+
   const selected = [...wrap.closest('.mdw-workbench').querySelectorAll('.mdw-qi-check:checked')].map((c) => c.dataset.task);
   const ready = !!((st.connection && st.connection.address) && st.maa && st.maa.ok);
   wrap.innerHTML = `
@@ -456,9 +621,12 @@ async function runQueue() {
 
 async function pageTasks(el) {
   if (!CATALOG) {
-    const [catalog, saved] = await Promise.all([api.get('/api/tasks/catalog'), api.get('/api/tasks/config')]);
+    const [catalog, saved, taskUi] = await Promise.all([
+      api.get('/api/tasks/catalog'), api.get('/api/tasks/config'), api.get('/api/tasks/ui'),
+    ]);
     CATALOG = catalog;
     TCONF = saved.config || {};
+    TASK_UI = taskUi;
   }
   if (!SELECTED) SELECTED = CATALOG.tasks[0] && CATALOG.tasks[0].id;
   const postAction = (TCONF._meta && TCONF._meta.postAction) || 'None';
@@ -476,15 +644,18 @@ async function pageTasks(el) {
         </div>
         <div class="mdw-queue-foot">
           <div class="mdw-queue-tools">
+            <button type="button" class="app-btn mdw-addbtn" id="q-add" title="添加任务">＋</button>
             <button type="button" class="app-btn" id="q-all">全选</button>
             <button type="button" class="app-btn" id="q-clear">清空</button>
           </div>
-          ${stdRow('完成后', '', selectCtl('q-post', [
-            { value: 'None', label: '无操作' }, { value: 'ExitGame', label: '退出游戏' },
-            { value: 'ExitEmulator', label: '退出模拟器' }, { value: 'Sleep', label: '睡眠' },
-            { value: 'Hibernate', label: '休眠' }, { value: 'Shutdown', label: '关机' },
-          ], postAction))}
-          <button type="button" class="app-btn mdw-btn-primary mdw-linkstart" id="q-run">Link Start!</button>
+          <div class="mdw-queue-post">
+            <span>完成后</span>
+            <div class="app-select-menu"><select id="q-post">
+              ${(TASK_UI && TASK_UI.postActions ? TASK_UI.postActions : [{ value: 'None', label: '无操作' }])
+                .map((p) => `<option value="${esc(p.value)}" ${p.value === postAction ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}
+            </select></div>
+          </div>
+          <button type="button" class="app-btn mdw-btn-primary mdw-startbtn" id="q-run">${SHELL.runner && SHELL.runner.phase && ['loading', 'connecting', 'running'].includes(SHELL.runner.phase) ? '停止' : '开始'}</button>
         </div>
       </section>
       <section class="mdw-main" id="mdw-main"></section>
@@ -533,7 +704,22 @@ async function pageTasks(el) {
     TCONF._meta = Object.assign({}, TCONF._meta, { postAction: ev.target.value });
     saveTasksConfig();
   });
-  el.querySelector('#q-run').addEventListener('click', runQueue);
+  // ＋：把还没启用的任务加入队列（对齐 MAA 的「添加任务」）
+  el.querySelector('#q-add').addEventListener('click', () => {
+    const boxes = [...el.querySelectorAll('.mdw-qi-check')];
+    const target = boxes.find((c) => !c.checked);
+    if (!target) { flashSaved('所有任务都已在队列中'); return; }
+    target.checked = true;
+    target.dispatchEvent(new Event('change'));
+    SELECTED = target.dataset.task;
+    redraw();
+    flashSaved(`已加入：${(CATALOG.tasks.find((t) => t.id === target.dataset.task) || {}).name || ''}`);
+  });
+  el.querySelector('#q-run').addEventListener('click', () => {
+    const running = ['loading', 'connecting', 'running', 'stopping'].includes((SHELL.runner || {}).phase);
+    if (running) { api.send('/api/runner/stop', 'POST').then(refreshShell).catch(() => {}); return; }
+    runQueue();
+  });
   el.querySelector('#log-copy').addEventListener('click', async () => {
     const text = LOGS.map((e) => `[${e.timestamp}] [${String(e.level).toUpperCase()}] [${e.source}] ${e.message}`).join('\n');
     try { await navigator.clipboard.writeText(text); flashSaved('日志已复制'); } catch { flashSaved('复制失败（浏览器限制）', true); }
@@ -548,6 +734,18 @@ async function pageTasks(el) {
   if (liveFollow) tl.scrollTop = tl.scrollHeight;
   redraw();
   renderShell();
+}
+
+// ----------------------------------------------------------- 自动战斗（Copilot）
+async function pageCopilot(el) {
+  el.innerHTML = `
+    <h2 class="mdw-h1">自动战斗</h2>
+    <p class="mdw-muted">MAA 桌面端的自动战斗页依赖「作业（Copilot）」能力：作业文件解析、干员自动编队、视频识别等。</p>
+    <div class="app-alert-bar"><span>本页尚未实现，当前为占位页。进度见「功能对照」页的 Copilot 部分（作业路径识别 / 多作业 / 视频识别 / 自动编队 / 作业分享，均为未实现）。</span></div>
+    <div class="mdw-cards">
+      <div class="mdw-card"><h3>协议支持</h3><div class="mdw-value" style="font-size:15px">Copilot / SSSCopilot / ParadoxCopilot 三种任务类型已在 spec 中（<code>maa-task-spec.json</code>）</div></div>
+      <div class="mdw-card"><h3>缺少</h3><div class="mdw-value" style="font-size:15px">作业文件上传/解析、干员识别结果联动、编队与助战策略、视频识别</div></div>
+    </div>`;
 }
 
 // ----------------------------------------------------------- 日程页
@@ -764,7 +962,7 @@ async function pageAbout(el) {
 
 // ----------------------------------------------------------- router
 const pages = {
-  tasks: pageTasks, schedule: pageSchedule, settings: pageSettings, features: pageFeatures,
+  tasks: pageTasks, copilot: pageCopilot, schedule: pageSchedule, settings: pageSettings, features: pageFeatures,
   runtime: pageRuntime, logs: pageLogs, about: pageAbout,
 };
 
@@ -774,6 +972,10 @@ async function route() {
   const name = hash.replace('#/', '').split('?')[0] || 'tasks';
   document.querySelectorAll('#app-navbar-list a').forEach((a) => {
     a.className = a.getAttribute('href') === `#/${name}` ? 'active' : 'unactive';
+  });
+  document.querySelectorAll('.mdw-navtab').forEach((a) => {
+    const own = a.getAttribute('href') === `#/${name}`;
+    a.className = `mdw-navtab ${own ? 'active' : 'unactive'}`;
   });
   try {
     await (pages[name] || pages.tasks)($page);

@@ -56,6 +56,7 @@ function funcs() {
     setUserDir: L.func('uint8_t AsstSetUserDir(const char *path)'),
     loadResource: L.func('uint8_t AsstLoadResource(const char *path)'),
     createEx: L.func('void *AsstCreateEx(AsstApiCallback *callback, void *custom_arg)'),
+    setInstanceOption: L.func('uint8_t AsstSetInstanceOption(void *handle, int32_t key, const char *value)'),
     destroy: L.func('void AsstDestroy(void *handle)'),
     appendTask: L.func('int32_t AsstAppendTask(void *handle, const char *type, const char *params)'),
     setTaskParams: L.func('uint8_t AsstSetTaskParams(void *handle, int32_t id, const char *params)'),

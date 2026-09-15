@@ -38,7 +38,7 @@
 本表由 [`apps/maa-server/src/feature-parity.json`](apps/maa-server/src/feature-parity.json) 自动生成，与 Web 界面「功能对照」页同源；更新数据后运行 `python3 scripts/gen-readme-parity.py` 同步（CI 会检查是否漂移）。
 
 <!-- parity:begin -->
-统计：**已实现 29** · 部分实现 6 · 未实现 20 · 桌面专属 5（共 60 项）
+统计：**已实现 30** · 部分实现 6 · 未实现 20 · 桌面专属 5（共 61 项）
 
 ### 执行管线（一切功能的地基）
 
@@ -53,6 +53,7 @@
 | 原生回调日志（任务链/子任务事件） | ✅ 已实现 | 回调写入日志页，WebSocket 实时推送 |
 | 执行截图 / 实时画面 | ❌ 未实现 | AsstGetImage 已有接口，未接 UI |
 | 参数映射（协议 schema 驱动） | ✅ 已实现 | scripts/gen-task-catalog.py 解析 MAA 官方 integration.md 生成 spec，runner 按字段类型强转，杜绝手写映射漂移 |
+| 实例选项（触控模式 / 客户端类型） | ✅ 已实现 | AsstSetInstanceOption(TouchMode=2, ClientType=6)，取值为 MaaCore AsstTypes.h 定义（minitouch/maatouch/adb/MaaFwAdb/MumuExtras） |
 
 ### 任务队列 · 12 种任务（桌面端任务列表）
 
@@ -132,7 +133,7 @@
 | 日志实时流（WebSocket） | ✅ 已实现 |  |
 | windows-ui 组件体系（官方 dist vendored） | ✅ 已实现 | 主题/导航收起均走官方机制 |
 | 功能对照页（本页） | ✅ 已实现 | 数据驱动，随开发更新 |
-| 一键长草工作台（三栏 + 运行实况 + 状态栏） | ✅ 已实现 | windows-ui 官方组件实现；顶部栏/图标栏/任务队列/配置面板/实况时间线 |
+| 任务页界面（逐项对照 MaaWpfGui XAML） | ✅ 已实现 | 开始唤醒/理智作战的常规+高级设置按官方 XAML 重建：复选框+数值、复选框+下拉、? 帮助、底部页签、左栏 ＋/全选/清空/完成后/开始·停止、顶部一键长草·自动战斗页签；数据在 task-ui.json |
 | 任务目录 / 参数 schema 由协议文档自动生成 | ✅ 已实现 | 18 种任务类型 / 168 个协议字段，改版只需重跑生成脚本 |
 <!-- parity:end -->
 

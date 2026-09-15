@@ -39,7 +39,7 @@ from the official MAA GitHub release and verifies it with SHA-256 into a persist
 Generated from [`apps/maa-server/src/feature-parity.json`](apps/maa-server/src/feature-parity.json) — the same data that drives the "Feature parity" page in the Web UI. After editing the data run `python3 scripts/gen-readme-parity.py` (CI fails if this table is stale).
 
 <!-- parity:begin -->
-Summary: **29 done** · 6 partial · 20 missing · 5 desktop-only (of 60)
+Summary: **30 done** · 6 partial · 20 missing · 5 desktop-only (of 61)
 
 ### Execution pipeline (the foundation)
 
@@ -54,6 +54,7 @@ Summary: **29 done** · 6 partial · 20 missing · 5 desktop-only (of 60)
 | Native callback logs (task chain / subtask events) | ✅ Done |
 | Screencap / live view | ❌ Missing |
 | Parameter mapping (protocol-schema driven) | ✅ Done |
+| Instance options (touch mode / client type) | ✅ Done |
 
 ### Task queue · 12 tasks (desktop list)
 
@@ -133,7 +134,7 @@ Summary: **29 done** · 6 partial · 20 missing · 5 desktop-only (of 60)
 | Live log stream (WebSocket) | ✅ Done |
 | windows-ui component system (vendored official dist) | ✅ Done |
 | Feature parity page (this section) | ✅ Done |
-| One-click idle workbench (3 columns + live panel + status bar) | ✅ Done |
+| Task pages rebuilt against MaaWpfGui XAML | ✅ Done |
 | Task catalog / param schema generated from the protocol doc | ✅ Done |
 <!-- parity:end -->
 

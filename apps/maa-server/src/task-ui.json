@@ -1,0 +1,178 @@
+{
+  "_source": "MaaWpfGui v6.17.5 官方界面逐项对照：Views/UI/TaskQueueView.xaml、Views/UserControl/TaskQueue/{StartUpTaskUserControl,FightSettingsUserControl,PostActionUserControl}.xaml；标签取自资源表 zh-cn.xaml，连接配置名取自 resource/config.json，触控模式取自 MaaCore InstanceOptionKey(TouchMode=2)",
+  "_kinds": "check=勾选框 | check-number=勾选框+数字 | check-select=勾选框+下拉 | select=下拉 | text=文本框 | weekdays=星期设置",
+  "shared": [
+    { "id": "clientType", "kind": "select", "label": "客户端类型", "target": "connection",
+      "help": "MAA 会根据客户端类型选择对应的资源与任务参数。",
+      "choices": [
+        { "value": "Official", "label": "官服" },
+        { "value": "Bilibili", "label": "Bilibili服" },
+        { "value": "YoStarEN", "label": "国际服 (YoStarEN)" },
+        { "value": "YoStarJP", "label": "日服 (YoStarJP)" },
+        { "value": "YoStarKR", "label": "韩服 (YoStarKR)" },
+        { "value": "txwy", "label": "繁中服 (txwy)" }
+      ] },
+    { "id": "config", "kind": "select", "label": "连接配置", "target": "connection",
+      "help": "MAA Core 内置的识别与截图策略，不同模拟器需要选择对应配置。",
+      "choices": [
+        { "value": "General", "label": "通用模式" },
+        { "value": "BlueStacks", "label": "蓝叠模拟器" },
+        { "value": "MuMuEmulator12", "label": "MuMu 模拟器" },
+        { "value": "LDPlayer", "label": "雷电模拟器" },
+        { "value": "Androws", "label": "应用宝模拟器" },
+        { "value": "AVD", "label": "Android 虚拟设备 (AVD)" },
+        { "value": "Nox", "label": "夜神模拟器" },
+        { "value": "XYAZ", "label": "逍遥模拟器" },
+        { "value": "CompatMac", "label": "明日方舟 PC 端（社区维护）" },
+        { "value": "WSA", "label": "WSA 旧版本" },
+        { "value": "Compatible", "label": "兼容模式" },
+        { "value": "SecondResolution", "label": "第二分辨率" },
+        { "value": "CapWithShell", "label": "通用模式（屏蔽异常输出）" }
+      ] },
+    { "id": "address", "kind": "text", "label": "连接地址", "target": "connection",
+      "placeholder": "192.168.31.190:5555", "help": "设备/模拟器的 ADB 端口，格式 host:port。" },
+    { "id": "adbPath", "kind": "text", "label": "ADB 路径", "target": "connection", "browse": true,
+      "placeholder": "留空使用容器内 /usr/bin/adb", "help": "自定义 adb 可执行文件路径（服务端容器内路径）。" },
+    { "id": "touchMode", "kind": "select", "label": "触控模式", "target": "connection", "instanceOption": 2,
+      "help": "实例级参数 AsstSetInstanceOption(TouchMode)。默认 Minitouch。",
+      "choices": [
+        { "value": "minitouch", "label": "Minitouch（默认）" },
+        { "value": "maatouch", "label": "MaaTouch（实验功能）" },
+        { "value": "adb", "label": "ADB Input（不推荐使用）" },
+        { "value": "MaaFwAdb", "label": "MaaFwAdb（实验功能）" },
+        { "value": "MumuExtras", "label": "MuMu 增强（需 MuMu 6.3.2+）" }
+      ] }
+  ],
+  "postActions": [
+    { "value": "None", "label": "无操作" },
+    { "value": "BackToHome", "label": "返回 模拟器 主屏幕" },
+    { "value": "ExitGame", "label": "退出 明日方舟" },
+    { "value": "ExitEmulator", "label": "退出 模拟器" },
+    { "value": "ExitMAA", "label": "退出 MAA" },
+    { "value": "Sleep", "label": "睡眠" },
+    { "value": "Hibernate", "label": "休眠" },
+    { "value": "Shutdown", "label": "关机" }
+  ],
+  "stages": [
+    { "value": "", "label": "当前/上次" },
+    { "value": "1-7", "label": "1-7" },
+    { "value": "SR-5", "label": "SR-5" },
+    { "value": "R8-11", "label": "R8-11" },
+    { "value": "12-17-HARD", "label": "12-17-HARD" },
+    { "value": "CE-6", "label": "龙门币-6/5" },
+    { "value": "AP-5", "label": "红票-5" },
+    { "value": "CA-5", "label": "技能-5" },
+    { "value": "LS-6", "label": "经验-6/5" },
+    { "value": "SK-5", "label": "碳-5" },
+    { "value": "PR-A-1", "label": "奶/盾芯片" },
+    { "value": "PR-A-2", "label": "奶/盾芯片组" },
+    { "value": "PR-B-1", "label": "术/组芯片" },
+    { "value": "PR-B-2", "label": "术/组芯片组" },
+    { "value": "PR-C-1", "label": "先/辅芯片" },
+    { "value": "PR-C-2", "label": "先/辅芯片组" },
+    { "value": "PR-D-1", "label": "近/特芯片" },
+    { "value": "PR-D-2", "label": "近/特芯片组" },
+    { "value": "Annihilation", "label": "当期剿灭" },
+    { "value": "OF-1", "label": "OF-1" },
+    { "value": "OF-F3", "label": "OF-F3" }
+  ],
+  "materialTargets": [
+    { "value": "", "label": "不选择" },
+    { "value": "30011", "label": "基础作战记录" },
+    { "value": "30012", "label": "初级作战记录" },
+    { "value": "30013", "label": "中级作战记录" },
+    { "value": "30014", "label": "高级作战记录" },
+    { "value": "30061", "label": "源岩" },
+    { "value": "30062", "label": "固源岩" },
+    { "value": "30063", "label": "固源岩组" },
+    { "value": "30064", "label": "提纯源岩" },
+    { "value": "30093", "label": "聚酸酯" },
+    { "value": "30094", "label": "聚酸酯组" },
+    { "value": "30073", "label": "异铁" },
+    { "value": "30074", "label": "异铁组" },
+    { "value": "30083", "label": "酮凝集" },
+    { "value": "30084", "label": "酮凝集组" },
+    { "value": "30053", "label": "酯原料" },
+    { "value": "30054", "label": "聚酸酯" },
+    { "value": "30033", "label": "糖" },
+    { "value": "30034", "label": "糖组" },
+    { "value": "31013", "label": "凝胶" },
+    { "value": "31023", "label": "晶体元件" },
+    { "value": "31033", "label": "半自然溶剂" }
+  ],
+  "tasks": {
+    "StartUp": {
+      "basic": [
+        { "id": "AccountSwitchEnabled", "kind": "check", "label": "账号切换",
+          "help": "仅支持切换至已登录的账号，使用登录名查找，保证输入内容在所有已登录账号唯一即可。" },
+        { "id": "AccountName", "kind": "text", "label": "", "showWhen": "AccountSwitchEnabled",
+          "placeholder": "官服：123****4567；B服：张三；繁中服：01@gmail" },
+        { "id": "StartGame", "kind": "check", "label": "是否启动客户端", "bind": "start_game_enabled",
+          "help": "作为「以下选项为多任务共享」的一部分，作用于整队任务。" },
+        { "id": "AutoDetectConnection", "kind": "check", "label": "自动检测连接", "target": "connection",
+          "help": "启动时自动探测可用模拟器与 ADB 端口。" },
+        { "id": "AlwaysAutoDetectConnection", "kind": "check", "label": "每次重新检测", "target": "connection", "showWhen": "AutoDetectConnection" }
+      ],
+      "advanced": [
+        { "id": "MuMu12ExtrasEnabled", "kind": "check", "label": "启用 MuMu 截图增强", "help": "需 MuMu 模拟器 12，使用外部渲染加速截图。" },
+        { "id": "MuMuExtrasTouchEnabled", "kind": "check", "label": "启用 MuMu 触控增强", "showWhen": "MuMu12ExtrasEnabled",
+          "help": "实验性功能，需 MuMu 模拟器 6.3.2+，需在 MuMu 设置中开启后台保活。" },
+        { "id": "MuMuBridgeConnection", "kind": "check", "label": "MuMu 网络桥接模式", "showWhen": "MuMu12ExtrasEnabled" },
+        { "id": "LdExtrasEnabled", "kind": "check", "label": "启用 LD 截图增强", "help": "需雷电模拟器 9。" },
+        { "id": "LdManualSetIndex", "kind": "check", "label": "手动填写 LD 索引", "showWhen": "LdExtrasEnabled" }
+      ]
+    },
+    "Fight": {
+      "basic": [
+        { "id": "UseMedicine", "kind": "check-number", "label": "使用药剂", "bind": "medicine",
+          "number": { "min": 0, "max": 999, "default": 999, "valueWhenOff": 0 },
+          "help": "最大使用理智药数量。" },
+        { "id": "UseStone", "kind": "check-number", "label": "使用源石", "bind": "stone",
+          "number": { "min": 0, "max": 999, "default": 0, "valueWhenOff": 0 },
+          "help": "最大吃石头数量。" },
+        { "id": "HasTimesLimited", "kind": "check-number", "label": "指定次数", "bind": "times",
+          "number": { "min": 1, "max": 9999, "default": 999, "valueWhenOff": 2147483647 },
+          "help": "战斗次数；不勾选表示刷到理智耗尽。" },
+        { "id": "IsSpecifiedDrops", "kind": "check-select", "label": "指定材料", "bind": "stage",
+          "choicesFrom": "materialTargets",
+          "help": "配合关卡选择按材料刷取；不选择则由关卡本身决定目标材料。" },
+        { "id": "Series", "kind": "select", "label": "代理倍率", "bind": "series",
+          "help": "AUTO 表示自动切换为当前可用的最大倍率。",
+          "choices": [
+            { "value": 0, "label": "AUTO" },
+            { "value": 10, "label": "10" }, { "value": 9, "label": "9" }, { "value": 8, "label": "8" },
+            { "value": 7, "label": "7" }, { "value": 6, "label": "6" }, { "value": 5, "label": "5" },
+            { "value": 4, "label": "4" }, { "value": 3, "label": "3" }, { "value": 2, "label": "2" },
+            { "value": 1, "label": "1" }, { "value": -1, "label": "不切换" }
+          ] },
+        { "id": "Stage", "kind": "select", "label": "关卡指定", "bind": "stage", "choicesFrom": "stages",
+          "help": "留空则识别当前/上次关卡。支持主线、资源本、芯片本、剿灭等。" }
+      ],
+      "advanced": [
+        { "id": "UseCustomAnnihilation", "kind": "check-select", "label": "自定义剿灭关卡", "bind": "stage",
+          "choices": [
+            { "value": "Annihilation", "label": "当期剿灭" },
+            { "value": "Chernobog@Annihilation", "label": "切尔诺伯格" },
+            { "value": "LungmenOutskirts@Annihilation", "label": "龙门外环" },
+            { "value": "LungmenDowntown@Annihilation", "label": "龙门市区" }
+          ] },
+        { "id": "IsDrGrandet", "kind": "check", "label": "博朗台模式", "bind": "DrGrandet",
+          "help": "先刷已经恢复的理智，理智耗尽后再使用理智药，避免浪费。" },
+        { "id": "UseExpiringMedicine", "kind": "check-number", "label": "无限吃 N 小时内过期的理智药", "bind": "medicine_expire_days",
+          "number": { "min": 1, "max": 999, "default": 48, "valueWhenOff": 0 } },
+        { "id": "UseExpireMedicineForActivity", "kind": "check", "label": "活动结束前 48H 吃当周过期理智药",
+          "help": "活动结束前 48 小时使用当周过期的理智药（需活动剩余天数可识别）。" },
+        { "id": "HideSeries", "kind": "check", "label": "隐藏代理倍率", "help": "界面级选项：隐藏代理倍率下拉框。" },
+        { "id": "AllowUseStoneSave", "kind": "check", "label": "允许使用源石保存状态", "help": "在需要保存代理指挥状态时允许消耗源石。" },
+        { "id": "CustomStageCode", "kind": "check", "label": "手动输入关卡名", "help": "开启后直接输入关卡代号（如 1-7、CE-6）。" },
+        { "id": "StageResetMode", "kind": "select", "label": "过期活动关卡重置为",
+          "choices": [ { "value": "Current", "label": "当前/上次" }, { "value": "NotSwitch", "label": "不切换" } ] },
+        { "id": "UseAlternateStage", "kind": "check", "label": "使用备选关卡", "help": "指定的关卡无法代理时，自动切换到备选关卡。" },
+        { "id": "HideUnavailableStage", "kind": "check", "label": "下拉框中隐藏当日不开放关卡" },
+        { "id": "UseWeeklySchedule", "kind": "check", "label": "启用周计划",
+          "help": "为每天单独指定关卡，运行时按当天星期自动选择。" },
+        { "id": "WeeklySchedule", "kind": "weekdays", "label": "", "showWhen": "UseWeeklySchedule" }
+      ]
+    }
+  }
+}

@@ -125,6 +125,9 @@ const routes = {
     return catalog;
   },
 
+  // MAA desktop UI layout (per-control, matches MaaWpfGui XAML)
+  'GET /api/tasks/ui': () => require('./task-ui.json'),
+
   // Per-task user configuration (persisted, keyed by task id)
   'GET /api/tasks/config': () => {
     const file = path.join(config.CONFIG_DIR(), 'tasks.json');
@@ -151,7 +154,7 @@ const routes = {
     // queue-level options (post action, etc.)
     if (body._meta && typeof body._meta === 'object' && !Array.isArray(body._meta)) {
       const meta = {};
-      const postActions = ['None', 'ExitGame', 'ExitEmulator', 'ExitMAA', 'Shutdown', 'Sleep', 'Hibernate'];
+      const postActions = ['None', 'BackToHome', 'ExitGame', 'ExitEmulator', 'ExitMAA', 'Shutdown', 'Sleep', 'Hibernate'];
       if (postActions.includes(body._meta.postAction)) meta.postAction = body._meta.postAction;
       if (Object.keys(meta).length) clean._meta = meta;
     }
@@ -189,7 +192,7 @@ const routes = {
       throw Object.assign(new Error('body must be a JSON object'), { statusCode: 400 });
     }
     const clean = {};
-    for (const key of ['address', 'addressType', 'config', 'sn', 'clientType', 'adbPath']) {
+    for (const key of ['address', 'addressType', 'config', 'sn', 'clientType', 'adbPath', 'touchMode', 'autoDetect', 'alwaysAutoDetect']) {
       if (typeof body[key] === 'string') clean[key] = body[key].slice(0, 256);
     }
     const file = path.join(config.CONFIG_DIR(), 'connection.json');

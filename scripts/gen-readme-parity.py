@@ -56,6 +56,8 @@ T = {
     "更换主题 SwitchTheme": ("Switch theme", "テーマ変更", "테마 변경"),
     "自定任务 Custom": ("Custom task", "カスタムタスク", "커스텀 태스크"),
     "参数映射（协议 schema 驱动）": ("Parameter mapping (protocol-schema driven)", "パラメータ変換（プロトコル schema 駆動）", "파라미터 매핑 (프로토콜 스키마 기반)"),
+    "实例选项（触控模式 / 客户端类型）": ("Instance options (touch mode / client type)", "インスタンスオプション（タッチモード・クライアント種別）", "인스턴스 옵션 (터치 모드/클라이언트 종류)"),
+    "任务页界面（逐项对照 MaaWpfGui XAML）": ("Task pages rebuilt against MaaWpfGui XAML", "タスク画面を MaaWpfGui XAML に逐項準拠", "태스크 화면을 MaaWpfGui XAML 기준으로 재구성"),
     "任务目录 / 参数 schema 由协议文档自动生成": ("Task catalog / param schema generated from the protocol doc", "タスクカタログ・パラメータ schema をプロトコル文書から自動生成", "태스크 카탈로그/파라미터 스키마를 프로토콜 문서에서 자동 생성"),
     "开始唤醒（账号切换/启动客户端）": ("StartUp (account switch / launch client)", "起動（アカウント切替・クライアント起動）", "시작 (계정 전환/클라이언트 실행)"),
     "理智作战": ("Fight (sanity farming)", "理性消費", "이성 소모"),

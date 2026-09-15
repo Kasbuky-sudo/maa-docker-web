@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="./windows-ui/config/app-config.css"/>
   <link rel="stylesheet" href="./windows-ui/windows-ui.min.css"/>
   <link rel="stylesheet" href="./windows-ui/icons/winui-icons.min.css"/>
-  <link rel="stylesheet" href="./style.css?v=0.4.1"/>
+  <link rel="stylesheet" href="./style.css?v=0.4.2"/>
 </head>
 <body>
   <div class="app-navbar-wrap" id="NavBarMain">
@@ -42,6 +42,10 @@
       <div class="mdw-topbar-l">
         <span class="app-navbar-toggler mdw-topbar-burger" data-win-toggle="navbar-left" data-win-target="#NavBarMain" aria-label="Toggle navigation"></span>
         <span class="mdw-brand">MAA for NAS</span>
+        <nav class="mdw-navatabs">
+          <a href="#/tasks" class="mdw-navtab active" id="navtab-tasks">一键长草</a>
+          <a href="#/copilot" class="mdw-navtab unactive" id="navtab-copilot">自动战斗</a>
+        </nav>
         <span class="mdw-muted" id="tb-version"></span>
       </div>
       <div class="mdw-topbar-r">
@@ -71,7 +75,7 @@
       if (el) el.innerHTML += '<p class="mdw-error">异步错误: ' + String((e.reason && e.reason.message) || e.reason) + '</p>';
     });
   </script>
-  <script src="./windows-ui/windows-ui.min.js?v=0.4.1"></script>
-  <script src="./app.js?v=0.4.1"></script>
+  <script src="./windows-ui/windows-ui.min.js?v=0.4.2"></script>
+  <script src="./app.js?v=0.4.2"></script>
 </body>
 </html>
