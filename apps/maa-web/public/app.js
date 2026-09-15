@@ -320,7 +320,15 @@ async function pageSettings(el) {
     ${accordion('连接设置', `
       <div class="mdw-opt-row"><div class="mdw-opt-label">连接地址</div>
         <div class="mdw-opt-ctl"><input type="text" class="app-input-text mdw-fill" id="st-addr" value="${esc(conn.connection.address || '')}" placeholder="ADB 地址，如 192.168.31.190:5555"/></div>
-        <div class="mdw-opt-help">填红石/模拟器所在设备的 ADB 端口。MAA 执行管线（M2）将使用此地址连接设备。</div></div>
+        <div class="mdw-opt-help">设备/模拟器的 ADB 端口，格式 host:port。</div></div>
+      <div class="mdw-opt-row"><div class="mdw-opt-label">ADB 路径</div>
+        <div class="mdw-opt-ctl"><input type="text" class="app-input-text mdw-fill" id="st-adbpath" value="${esc(conn.connection.adbPath || '')}" placeholder="留空使用容器内 /usr/bin/adb"/></div>
+        <div class="mdw-opt-help">自定义 adb 可执行文件路径（服务端容器内路径）。</div></div>
+      <div class="mdw-opt-row"><div class="mdw-opt-label">连接配置</div>
+        <div class="mdw-opt-ctl"><div class="app-select-menu mdw-fill"><select id="st-conncfg">
+          ${['General', 'BlueStacks', 'MuMuEmulator12', 'LDPlayer', 'Nox', 'XYAZ', 'WSA', 'Androws'].map((c) => `<option ${(conn.connection.config || 'General') === c ? 'selected' : ''}>${c}</option>`).join('')}
+        </select></div>
+        <div class="mdw-opt-help">对应 MaaCore 内置连接配置，影响截图与触控方式。</div></div></div>
       <div class="mdw-actions"><button type="button" class="app-btn mdw-btn-primary" id="st-save2">保存</button><span id="st-msg2" class="mdw-muted"></span></div>`, true)}
     ${accordion('启动设置', `
       <div class="mdw-opt-row"><div class="mdw-opt-label">自动下载 Runtime</div>
@@ -346,7 +354,11 @@ async function pageSettings(el) {
   });
   el.querySelector('#st-save2').addEventListener('click', async () => {
     try {
-      await api.send('/api/connection', 'PUT', Object.assign({}, conn.connection, { address: el.querySelector('#st-addr').value.trim() }));
+      await api.send('/api/connection', 'PUT', Object.assign({}, conn.connection, {
+        address: el.querySelector('#st-addr').value.trim(),
+        adbPath: el.querySelector('#st-adbpath').value.trim(),
+        config: el.querySelector('#st-conncfg').value,
+      }));
       el.querySelector('#st-msg2').textContent = '已保存 ✔';
     } catch (e) { el.querySelector('#st-msg2').textContent = e.message; }
   });

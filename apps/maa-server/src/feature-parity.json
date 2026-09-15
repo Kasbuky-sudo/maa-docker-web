@@ -67,7 +67,7 @@
       "module": "设置（桌面端 15 组）",
       "items": [
         { "name": "常规设置（客户端类型）", "status": "full", "note": "" },
-        { "name": "连接设置", "status": "partial", "note": "仅连接地址/客户端类型；缺 ADB 路径、触控模式、MuMu/LD 截图增强、连接配置" },
+        { "name": "连接设置", "status": "partial", "note": "已有地址/ADB 路径/连接配置/客户端类型；缺触控模式与 MuMu/LD 截图增强" },
         { "name": "启动设置", "status": "full", "note": "对应 Runtime 自动下载策略" },
         { "name": "定时设置（多套配置独立定时）", "status": "partial", "note": "简化版日程页，无多配置绑定" },
         { "name": "外部通知（SMTP/TG/Discord/Server酱…）", "status": "none", "note": "" },
