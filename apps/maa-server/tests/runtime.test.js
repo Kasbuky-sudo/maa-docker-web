@@ -10,6 +10,9 @@ const config = require('../src/config');
 const runtime = require('../src/runtime');
 
 test('config: defaults, save whitelist and validation', () => {
+  delete process.env.LOG_LEVEL;
+  delete process.env.AUTO_FETCH_RUNTIME;
+  delete process.env.TZ;
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'maa-cfg-'));
   process.env.DATA_DIR = tmp;
   process.env.CONFIG_DIR = path.join(tmp, 'config');
@@ -56,4 +59,23 @@ test('runtime: status reports uninitialized on empty dir', () => {
   assert.equal(ok, false);
   assert.equal(runtime.status().status, 'uninitialized');
   assert.equal(runtime.resourcesInfo().present, false);
+});
+
+test('runtime: flat layout detection (official tarball extracts flat)', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'maa-flat-'));
+  const rtDir = path.join(tmp, 'runtime');
+  fs.mkdirSync(path.join(rtDir, 'resource', 'onnx'), { recursive: true });
+  fs.mkdirSync(path.join(rtDir, 'Python'), { recursive: true });
+  fs.writeFileSync(path.join(rtDir, 'libMaaCore.so'), 'fake');
+  process.env.DATA_DIR = tmp;
+  process.env.RUNTIME_DIR = rtDir;
+  process.env.RESOURCE_DIR = path.join(tmp, 'resource');
+  assert.equal(runtime._internal.runtimeRoot(), rtDir);
+  const info = runtime.resourcesInfo();
+  assert.equal(info.present, true);
+  assert.equal(info.resourceDir, path.join(rtDir, 'resource'));
+  const v = runtime.verify();
+  assert.equal(v.ok, true);
+  const nested = v.checks.find((c) => c.name === 'MaaCore library');
+  assert.equal(nested.ok, true);
 });

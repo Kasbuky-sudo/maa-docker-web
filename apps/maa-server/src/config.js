@@ -4,8 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', '..', '..', 'data');
-const CONFIG_DIR = process.env.CONFIG_DIR || path.join(DATA_DIR, 'config');
-const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
+const CONFIG_DIR = () => process.env.CONFIG_DIR || path.join(process.env.DATA_DIR || path.join(__dirname, '..', '..', '..', 'data'), 'config');
+const configFile = () => path.join(CONFIG_DIR(), 'config.json');
 
 const DEFAULTS = Object.freeze({
   serverName: 'MAA Docker Web',
@@ -17,7 +17,7 @@ const DEFAULTS = Object.freeze({
 let cache = null;
 
 function ensureDirs() {
-  fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  fs.mkdirSync(CONFIG_DIR(), { recursive: true });
 }
 
 function load() {
@@ -25,7 +25,7 @@ function load() {
   ensureDirs();
   let stored = {};
   try {
-    stored = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+    stored = JSON.parse(fs.readFileSync(configFile(), 'utf8'));
   } catch {
     stored = {};
   }
@@ -41,7 +41,7 @@ function save(next) {
   for (const key of Object.keys(DEFAULTS)) {
     clean[key] = merged[key];
   }
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(clean, null, 2) + '\n', 'utf8');
+  fs.writeFileSync(configFile(), JSON.stringify(clean, null, 2) + '\n', 'utf8');
   cache = clean;
   return clean;
 }
@@ -70,4 +70,4 @@ function resetForTest() {
   cache = null;
 }
 
-module.exports = { load, save, validate, CONFIG_FILE, CONFIG_DIR, DATA_DIR, resetForTest };
+module.exports = { load, save, validate, configFile, CONFIG_DIR, DATA_DIR, resetForTest };

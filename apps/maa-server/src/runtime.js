@@ -30,9 +30,9 @@ const ASSETS = Object.freeze({
   }),
 });
 
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', '..', '..', 'data');
-const RUNTIME_DIR = process.env.RUNTIME_DIR || path.join(DATA_DIR, 'runtime');
-const RESOURCE_DIR = process.env.RESOURCE_DIR || path.join(DATA_DIR, 'resource');
+const DATA_DIR = () => process.env.DATA_DIR || path.join(__dirname, '..', '..', '..', 'data');
+const RUNTIME_DIR = () => process.env.RUNTIME_DIR || path.join(DATA_DIR(), 'runtime');
+const RESOURCE_DIR = () => process.env.RESOURCE_DIR || path.join(DATA_DIR(), 'resource');
 const MARKER_FILE = '.maa-docker-web-runtime.json';
 
 const state = {
@@ -50,7 +50,7 @@ function assetFor(arch) {
 }
 
 function markerPath() {
-  return path.join(RUNTIME_DIR, MARKER_FILE);
+  return path.join(RUNTIME_DIR(), MARKER_FILE);
 }
 
 function readMarker() {
@@ -66,12 +66,19 @@ function writeMarker(data) {
 }
 
 function runtimeRoot() {
-  // After extraction the archive contains a single top-level directory like
-  // MAA-v6.17.5-linux-x86_64/ — locate it once.
+  // The official Linux tarball extracts FLAT into RUNTIME_DIR
+  // (libMaaCore.so, resource/, Python/, maa ... at the top level).
   try {
-    const entries = fs.readdirSync(RUNTIME_DIR, { withFileTypes: true })
+    if (fs.existsSync(path.join(RUNTIME_DIR(), 'libMaaCore.so'))) return RUNTIME_DIR();
+    // Defensive fallback: some layouts nest everything under one directory.
+    const entries = fs.readdirSync(RUNTIME_DIR(), { withFileTypes: true })
       .filter((e) => e.isDirectory() && !e.name.startsWith('.'));
-    return entries.length ? path.join(RUNTIME_DIR, entries[0].name) : null;
+    for (const e of entries) {
+      if (fs.existsSync(path.join(RUNTIME_DIR(), e.name, 'libMaaCore.so'))) {
+        return path.join(RUNTIME_DIR(), e.name);
+      }
+    }
+    return null;
   } catch {
     return null;
   }
@@ -85,8 +92,8 @@ function setStatus(status, error) {
 
 /** Check whether a previously fetched runtime is present and valid. */
 function init() {
-  fs.mkdirSync(RUNTIME_DIR, { recursive: true });
-  fs.mkdirSync(RESOURCE_DIR, { recursive: true });
+  fs.mkdirSync(RUNTIME_DIR(), { recursive: true });
+  fs.mkdirSync(RESOURCE_DIR(), { recursive: true });
   const marker = readMarker();
   if (marker && marker.maaVersion === MAA_VERSION && marker.sha256 === assetFor(state.arch).sha256 && runtimeRoot()) {
     state.fetchedAt = marker.fetchedAt || null;
@@ -109,7 +116,7 @@ function sha256File(file) {
 
 function extractTar(file) {
   return new Promise((resolve, reject) => {
-    const proc = spawn('tar', ['-xzf', file, '-C', RUNTIME_DIR], { stdio: 'ignore' });
+    const proc = spawn('tar', ['-xzf', file, '-C', RUNTIME_DIR()], { stdio: 'ignore' });
     proc.on('error', reject);
     proc.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`tar exited with code ${code}`))));
   });
@@ -124,9 +131,9 @@ async function fetchRuntime(progressCb = () => {}) {
   state.busy = true;
   const asset = assetFor(state.arch);
   state.asset = asset.file;
-  const tmpFile = path.join(RUNTIME_DIR, asset.file);
+  const tmpFile = path.join(RUNTIME_DIR(), asset.file);
   try {
-    fs.mkdirSync(RUNTIME_DIR, { recursive: true });
+    fs.mkdirSync(RUNTIME_DIR(), { recursive: true });
     setStatus('downloading');
     logger.info('runtime', `downloading ${asset.url}`);
     const res = await fetch(asset.url, { redirect: 'follow' });
@@ -234,7 +241,7 @@ function status() {
     error: state.error,
     fetchedAt: state.fetchedAt,
     busy: state.busy,
-    runtimeDir: RUNTIME_DIR,
+    runtimeDir: RUNTIME_DIR(),
   };
 }
 
