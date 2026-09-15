@@ -25,7 +25,6 @@
         <label class="app-navbar-theme-switch">
           <input id="app-navbar-theme-switch" type="checkbox" checked>
           <div class="app-navbar-theme-switch-icon"></div>
-          <span id="app-navbar-theme-switch-text">Day Mode</span>
         </label>
         <li class="app-navbar-list-item"><a href="#/" class="active"><i class="icons10-home"></i><span>总览</span></a></li>
         <li class="app-navbar-list-item"><a href="#/runtime" class="unactive"><i class="icons10-cpu"></i><span>Runtime</span></a></li>
@@ -35,9 +34,28 @@
       </ul>
     </nav>
   </div>
-  <div class="app-page-container has-padding" id="page"></div>
+  <div class="app-page-container has-padding" id="page">
+    <h2 class="mdw-title">加载中…</h2>
+    <p class="mdw-muted">如果此文字长时间停留，说明 JavaScript 未运行（下方会显示具体错误）。</p>
+    <noscript><p class="mdw-error">浏览器已禁用 JavaScript，本页面无法工作。</p></noscript>
+  </div>
 
-  <script src="./windows-ui/windows-ui.min.js"></script>
-  <script src="./app.js"></script>
+  <script>
+    // Show any script error on the page itself instead of a silent blank screen.
+    window.addEventListener('error', function (e) {
+      var el = document.getElementById('page');
+      if (el) {
+        el.innerHTML += '<p class="mdw-error">脚本错误: ' + (e.message || 'unknown') + ' @ ' + (e.filename || '') + ':' + (e.lineno || '') + '</p>';
+      }
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      var el = document.getElementById('page');
+      if (el) {
+        el.innerHTML += '<p class="mdw-error">异步错误: ' + String((e.reason && e.reason.message) || e.reason) + '</p>';
+      }
+    });
+  </script>
+  <script src="./windows-ui/windows-ui.min.js?v=0.1.2"></script>
+  <script src="./app.js?v=0.1.2"></script>
 </body>
 </html>
