@@ -1,0 +1,107 @@
+{
+  "name": "MAA 任务目录",
+  "upstream": "MaaAssistantArknights v6.17.5 集成协议（docs/protocol）与桌面端功能对齐",
+  "clients": [
+    { "value": "Official", "label": "官服" },
+    { "value": "Bilibili", "label": "Bilibili服" },
+    { "value": "YoStarEN", "label": "国际服 (EN)" },
+    { "value": "YoStarJP", "label": "日服" },
+    { "value": "YoStarKR", "label": "韩服" },
+    { "value": "txwy", "label": "繁中服" }
+  ],
+  "tasks": [
+    {
+      "id": "fight",
+      "name": "理智作战",
+      "taskType": "Fight",
+      "description": "代理作战，自动消耗理智清体力。",
+      "options": [
+        { "id": "stage", "type": "text", "label": "关卡选择", "default": "", "placeholder": "如 1-7 / CE-6 / 留空使用上次关卡", "help": "支持主线、资源收集、剿灭、活动关卡。" },
+        { "id": "medicine", "type": "counter", "label": "使用理智药", "default": 0, "min": 0, "max": 999, "help": "理智不足时自动使用理智药的数量。" },
+        { "id": "stone", "type": "counter", "label": "碎石次数", "default": 0, "min": 0, "max": 10, "help": "使用源石回复理智的次数。" },
+        { "id": "times", "type": "counter", "label": "刷图次数", "default": 10000, "min": 1, "max": 10000, "help": "指定次数后停止，或理智耗尽停止。" },
+        { "id": "series", "type": "select", "label": "代理连战", "default": 1, "choices": [ { "value": 1, "label": "不连战" }, { "value": 2, "label": "连战 2 次" }, { "value": 3, "label": "连战 3 次" }, { "value": 4, "label": "连战 4 次" }, { "value": 5, "label": "连战 5 次" }, { "value": 6, "label": "连战 6 次" } ] },
+        { "id": "drops", "type": "switch", "label": "掉落识别", "default": true, "help": "自动识别并统计掉落物。" },
+        { "id": "report_to_penguin", "type": "switch", "label": "上传企鹅物流", "default": false, "help": "需要先在掉落识别开启时使用。" },
+        { "id": "client_type", "type": "select", "label": "客户端类型", "default": "Official", "choicesFrom": "clients" }
+      ]
+    },
+    {
+      "id": "infrast",
+      "name": "基建换班",
+      "taskType": "Infrast",
+      "description": "自动计算干员效率并换班。",
+      "options": [
+        { "id": "mode", "type": "select", "label": "换班模式", "default": "normal", "choices": [ { "value": "normal", "label": "常规模式（自动计算效率）" }, { "value": "custom", "label": "自定义配置" } ] },
+        { "id": "facility", "type": "multi", "label": "设施", "default": ["Mfg", "Trade", "Power", "Control", "Reception", "Office", "Dorm"], "choices": [ { "value": "Mfg", "label": "制造站" }, { "value": "Trade", "label": "贸易站" }, { "value": "Power", "label": "发电站" }, { "value": "Control", "label": "控制中枢" }, { "value": "Reception", "label": "会客室" }, { "value": "Office", "label": "办公室" }, { "value": "Dorm", "label": "宿舍" } ] },
+        { "id": "drones", "type": "select", "label": "无人机用途", "default": "_NotUse", "choices": [ { "value": "_NotUse", "label": "不使用无人机" }, { "value": "Money", "label": "贸易站-龙门币" }, { "value": "CombatRecord", "label": "制造站-作战记录" } ] },
+        { "id": "threshold", "type": "select", "label": "心情阈值", "default": 0.3, "choices": [ { "value": 0.1, "label": "10%" }, { "value": 0.2, "label": "20%" }, { "value": 0.3, "label": "30%（推荐）" }, { "value": 0.4, "label": "40%" }, { "value": 0.5, "label": "50%" } ] },
+        { "id": "replenish", "type": "switch", "label": "源石碎片自动补货", "default": false }
+      ]
+    },
+    {
+      "id": "award",
+      "name": "领取日常奖励",
+      "taskType": "Award",
+      "description": "领取每日/每周任务奖励、邮件与月卡。",
+      "options": [
+        { "id": "award", "type": "switch", "label": "领取每日/每周任务奖励", "default": true },
+        { "id": "mail", "type": "switch", "label": "领取所有邮件奖励", "default": true },
+        { "id": "recruit", "type": "switch", "label": "进行每日免费单抽", "default": false, "help": "活动期间每日免费单抽。" },
+        { "id": "orundum", "type": "switch", "label": "领取幸运墙合成玉", "default": false },
+        { "id": "mining", "type": "switch", "label": "领取限时开采许可", "default": false },
+        { "id": "specialaccess", "type": "switch", "label": "领取五周年赠送月卡", "default": false }
+      ]
+    },
+    {
+      "id": "recruit",
+      "name": "自动公招",
+      "taskType": "Recruit",
+      "description": "自动识别公招标签并完成招募。",
+      "options": [
+        { "id": "refresh", "type": "switch", "label": "自动刷新三星标签", "default": true },
+        { "id": "select", "type": "multi", "label": "招募标签等级", "default": [4, 5, 6], "choices": [ { "value": 3, "label": "3 星" }, { "value": 4, "label": "4 星" }, { "value": 5, "label": "5 星" }, { "value": 6, "label": "6 星" } ] },
+        { "id": "confirm", "type": "multi", "label": "自动确认等级", "default": [3, 4], "choices": [ { "value": 1, "label": "1 星" }, { "value": 2, "label": "2 星" }, { "value": 3, "label": "3 星" }, { "value": 4, "label": "4 星" } ] },
+        { "id": "times", "type": "counter", "label": "招募次数上限", "default": 4, "min": 1, "max": 20 },
+        { "id": "expedite", "type": "switch", "label": "使用加急许可", "default": false },
+        { "id": "skip_robot", "type": "switch", "label": "识别到机器人时跳过", "default": true }
+      ]
+    },
+    {
+      "id": "mall",
+      "name": "信用商店购物",
+      "taskType": "Mall",
+      "description": "收取信用点并自动购买信用商店商品。",
+      "options": [
+        { "id": "credit_fight", "type": "switch", "label": "借助战刷信用点", "default": false },
+        { "id": "buy_first", "type": "text", "label": "优先购买（逗号分隔）", "default": "招聘许可,龙门币,赤金" },
+        { "id": "black_list", "type": "text", "label": "黑名单（逗号分隔）", "default": "家具" }
+      ]
+    },
+    {
+      "id": "roguelike",
+      "name": "无限肉鸽",
+      "taskType": "Roguelike",
+      "description": "自动集成战略模式（肉鸽）。",
+      "options": [
+        { "id": "theme", "type": "select", "label": "主题", "default": "Sarkaz", "choices": [ { "value": "Phantom", "label": "傀影与猩红孤钻" }, { "value": "Mizuki", "label": "水月与深蓝之树" }, { "value": "Sami", "label": "探索者的银凇止境" }, { "value": "Sarkaz", "label": "萨卡兹的无终奇想" }, { "value": "JieYuan", "label": "界园肉鸽" }, { "value": "BlackFlow", "label": "黑流树海" } ] },
+        { "id": "mode", "type": "select", "label": "策略", "default": 0, "choices": [ { "value": 0, "label": "刷等级，尽可能稳定打更多层数" }, { "value": 1, "label": "刷源石锭，投资完成后自动退出" }, { "value": 4, "label": "刷开局，先拿一个开局干员后退出" } ] },
+        { "id": "starts_count", "type": "counter", "label": "开始探索次数", "default": 99999, "min": 1, "max": 99999 },
+        { "id": "investment_enabled", "type": "switch", "label": "投资源石锭", "default": true },
+        { "id": "stops_when_investment_full", "type": "switch", "label": "投资满后自动退出", "default": false },
+        { "id": "squad", "type": "select", "label": "开局分队", "default": "", "choices": [ { "value": "", "label": "默认分队" }, { "value": "指挥分队", "label": "指挥分队" }, { "value": "集群分队", "label": "集群分队" }, { "value": "后勤分队", "label": "后勤分队" }, { "value": "矛头分队", "label": "矛头分队" }, { "value": "突击战术分队", "label": "突击战术分队" }, { "value": "堡垒战术分队", "label": "堡垒战术分队" }, { "value": "远程战术分队", "label": "远程战术分队" }, { "value": "破坏战术分队", "label": "破坏战术分队" }, { "value": "研究分队", "label": "研究分队" }, { "value": "高规格分队", "label": "高规格分队" } ] },
+        { "id": "roles", "type": "select", "label": "开局职业", "default": "", "choices": [ { "value": "", "label": "默认职业" }, { "value": "先锋", "label": "先锋" }, { "value": "近卫", "label": "近卫" }, { "value": "重装", "label": "重装" }, { "value": "狙击", "label": "狙击" }, { "value": "术师", "label": "术师" }, { "value": "医疗", "label": "医疗" }, { "value": "辅助", "label": "辅助" }, { "value": "特种", "label": "特种" } ] },
+        { "id": "core_char", "type": "text", "label": "开局干员", "default": "", "placeholder": "留空自动选择" }
+      ]
+    },
+    {
+      "id": "reclamation",
+      "name": "生息演算",
+      "taskType": "ReclamationAlgorithm",
+      "description": "自动生息演算（沙中之火模式）。",
+      "options": [
+        { "id": "mode", "type": "select", "label": "模式", "default": 1, "choices": [ { "value": 0, "label": "不开启" }, { "value": 1, "label": "自动计算最优路径" } ] }
+      ]
+    }
+  ]
+}

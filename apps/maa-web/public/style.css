@@ -73,3 +73,47 @@ body { display: flex; min-height: 100vh; }
 .mdw-list { font-size: 13px; line-height: 1.8; }
 .mdw-list b { font-weight: 500; }
 h2.mdw-title { margin: 8px 0 4px; }
+
+/* ---- primary button (windows-ui token) ---- */
+.mdw-btn-primary { background: var(--color-primary-adaptive, #0078d4); border-color: transparent; color: #fff; }
+.mdw-btn-primary:hover { filter: brightness(1.08); }
+.mdw-fill { width: 100%; }
+.mdw-hstack { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+
+/* ---- 任务页: MAA 桌面端布局 ---- */
+.mdw-task-layout { display: flex; gap: 20px; align-items: flex-start; margin-top: 10px; min-width: 0; }
+.mdw-task-list { flex: 0 0 250px; border: 1px solid rgba(0,0,0,.08); border-radius: 8px; padding: 8px; background: var(--color-card-bg-default, #fbfbfb); }
+[data-theme="dark"] .mdw-task-list { border-color: rgba(255,255,255,.08); }
+.mdw-task-list-head { font-size: 13px; opacity: .7; padding: 6px 8px 8px; border-bottom: 1px solid rgba(0,0,0,.06); margin-bottom: 6px; }
+[data-theme="dark"] .mdw-task-list-head { border-bottom-color: rgba(255,255,255,.06); }
+.mdw-task-item { display: flex; align-items: center; gap: 10px; padding: 9px 8px; border-radius: 6px; cursor: pointer; }
+.mdw-task-item:hover { background: var(--color-ui-hover-default, rgba(0,0,0,.04)); }
+.mdw-task-item.selected { background: var(--color-ui-hover-default, rgba(0,0,0,.05)); box-shadow: inset 3px 0 0 var(--color-primary-adaptive, #0078d4); }
+.mdw-task-name-sm { font-size: 15px; }
+.mdw-savebar { padding: 8px; font-size: 12px; min-height: 18px; }
+.mdw-task-detail { flex: 1 1 auto; min-width: 0; }
+.mdw-task-name { margin: 4px 0 2px; font-size: 20px; font-weight: 500; }
+.mdw-opts { margin-top: 12px; display: flex; flex-direction: column; gap: 14px; max-width: 640px; }
+.mdw-opt-row { display: grid; grid-template-columns: 170px 1fr; gap: 4px 14px; align-items: center; }
+.mdw-opt-label { font-size: 14px; }
+.mdw-opt-help { grid-column: 2; font-size: 12px; opacity: .6; }
+.mdw-opt-row .mdw-opt-help:only-child { grid-column: 1 / -1; }
+.mdw-stepper { display: inline-flex; gap: 6px; align-items: center; }
+.mdw-stepper input { width: 90px; text-align: center; }
+.mdw-step { width: 34px; padding: 0; font-size: 17px; }
+.mdw-multi { display: flex; flex-wrap: wrap; gap: 10px 18px; }
+.mdw-check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
+.mdw-action-bar { display: flex; gap: 14px; align-items: center; margin-top: 18px; padding: 12px 0; border-top: 1px solid rgba(0,0,0,.08); flex-wrap: wrap; }
+[data-theme="dark"] .mdw-action-bar { border-top-color: rgba(255,255,255,.08); }
+.mdw-progress-fit { width: 260px; }
+.mdw-acc-body { padding: 12px 16px 16px; }
+/* windows-ui accordion panel has fixed 500px height when open; let it fit content */
+.app-accordion-panel.show { height: auto; }
+.mdw-time { width: 120px; }
+
+@media (max-width: 760px) {
+  .mdw-task-layout { flex-direction: column; }
+  .mdw-task-list { flex: none; width: 100%; }
+  .mdw-opt-row { grid-template-columns: 1fr; }
+  .mdw-opt-help { grid-column: 1; }
+}
