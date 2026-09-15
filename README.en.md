@@ -61,7 +61,7 @@ replacing the runtime invalidates the cached MaaCore resources and drops the old
 Generated from [`apps/maa-server/src/feature-parity.json`](apps/maa-server/src/feature-parity.json) — the same data that drives the "Feature parity" page in the Web UI. After editing the data run `python3 scripts/gen-readme-parity.py` (CI fails if this table is stale).
 
 <!-- parity:begin -->
-Summary: **30 done** · 6 partial · 20 missing · 5 desktop-only (of 61)
+Summary: **41 done** · 10 partial · 8 missing · 4 desktop-only (of 63)
 
 ### Execution pipeline (the foundation)
 
@@ -74,7 +74,7 @@ Summary: **30 done** · 6 partial · 20 missing · 5 desktop-only (of 61)
 | Task dispatch (AsstAppendTask + param mapping) | ✅ Done |
 | Start / stop (AsstStart, AsstStop) | ✅ Done |
 | Native callback logs (task chain / subtask events) | ✅ Done |
-| Screencap / live view | ❌ Missing |
+| Screencap / live view | ✅ Done |
 | Parameter mapping (protocol-schema driven) | ✅ Done |
 | Instance options (touch mode / client type) | ✅ Done |
 
@@ -99,33 +99,33 @@ Summary: **30 done** · 6 partial · 20 missing · 5 desktop-only (of 61)
 
 | Feature | Status |
 |---|---|
-| Multiple instances / copy / rename / drag-sort | ❌ Missing |
-| Select all | ❌ Missing |
-| Wait & stop | ❌ Missing |
-| Post-action (exit game/emulator, shutdown, sleep…) | 🟡 Partial |
+| Multiple instances / copy / rename / drag-sort | 🟡 Partial |
+| Select all | ✅ Done |
+| Wait & stop | ✅ Done |
+| Post-action (exit game/emulator, shutdown, sleep…) | ✅ Done |
 | Task timeout reminder | ❌ Missing |
-| Today's stage hint | ❌ Missing |
-| Auto reload resources | ❌ Missing |
-| Scheduled runs | 🟡 Partial |
+| Today's stage hint | 🟡 Partial |
+| Auto reload resources | ✅ Done |
+| Scheduled runs | ✅ Done |
 
 ### Copilot page
 
 | Feature | Status |
 |---|---|
-| Copilot path / mystery code | ❌ Missing |
-| Multi-job mode / bulk import | ❌ Missing |
+| Copilot path / mystery code | 🟡 Partial |
+| Multi-job mode / bulk import | 🟡 Partial |
 | Video recognition | ❌ Missing |
-| Auto squad / support / low-trust fill / modules | ❌ Missing |
+| Auto squad / support / low-trust fill / modules | 🟡 Partial |
 | Job sharing / rating | ❌ Missing |
 
 ### Toolbox page
 
 | Feature | Status |
 |---|---|
-| Recruitment recognition (tags / timer) | ❌ Missing |
-| Depot recognition (JSON export) | ❌ Missing |
-| Operator recognition | ❌ Missing |
-| Gacha / Peep / MiniGame | ⚪ Desktop-only |
+| Recruitment recognition (tags / timer) | ✅ Done |
+| Depot recognition (JSON export) | 🟡 Partial |
+| Operator recognition | ✅ Done |
+| Gacha / Peep / MiniGame | 🟡 Partial |
 
 ### Settings (15 desktop groups)
 
@@ -141,7 +141,7 @@ Summary: **30 done** · 6 partial · 20 missing · 5 desktop-only (of 61)
 | Performance settings | ❌ Missing |
 | Game settings | ❌ Missing |
 | GUI / background settings | ⚪ Desktop-only |
-| Version update settings | 🟡 Partial |
+| Version update settings | ✅ Done |
 | Profile management (multiple configs) | ❌ Missing |
 | Achievements | ⚪ Desktop-only |
 | Issue report | ⚪ Desktop-only |
@@ -158,6 +158,8 @@ Summary: **30 done** · 6 partial · 20 missing · 5 desktop-only (of 61)
 | Feature parity page (this section) | ✅ Done |
 | Task pages rebuilt against MaaWpfGui XAML | ✅ Done |
 | Task catalog / param schema generated from the protocol doc | ✅ Done |
+| Mobile layout (single column + drawer nav below 760px) | ✅ Done |
+| Backend wiring (status polling / config persistence / live view) | ✅ Done |
 <!-- parity:end -->
 
 ## Architecture

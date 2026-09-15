@@ -47,8 +47,8 @@
         },
         {
           "name": "执行截图 / 实时画面",
-          "status": "none",
-          "note": "AsstGetImage 已有接口，未接 UI"
+          "status": "full",
+          "note": "GET /api/device/screenshot（ADB screencap 直出 PNG，真机 1920×1080 验证）；牛牛监控/抽卡页实时画面按目标帧率刷新并显示实测 FPS"
         },
         {
           "name": "参数映射（协议 schema 驱动）",
@@ -73,7 +73,7 @@
         {
           "name": "理智作战 Fight",
           "status": "partial",
-          "note": "协议 16 字段已接入（关卡/理智药与过期策略/碎石/次数/代理倍率/掉落上报/服务器/博朗台）；缺桌面端 GUI 级「周计划」与「材料目标库存」（非协议字段）"
+          "note": "协议 16 字段全部接入（关卡/理智药与过期策略/碎石/次数/代理倍率/掉落上报/服务器/博朗台）；「周计划」已实现——服务端按当天星期自动展开成多个 Fight 任务；仍缺「材料目标库存」（非协议字段）"
         },
         {
           "name": "基建换班 Infrast",
@@ -132,23 +132,23 @@
       "items": [
         {
           "name": "任务多实例/复制/重命名/拖动排序",
-          "status": "none",
-          "note": ""
+          "status": "partial",
+          "note": "添加（12 类可多实例）/重命名/删除/拖动排序已实现；复制未做"
         },
         {
           "name": "全选",
-          "status": "none",
-          "note": ""
+          "status": "full",
+          "note": "队列工具条：全选/清空/保存配置"
         },
         {
           "name": "等待 & 停止",
-          "status": "none",
-          "note": "有立即停止"
+          "status": "full",
+          "note": "开始/停止按钮 + 运行状态 2.5s 轮询 + 运行实况时间线（WS 日志）"
         },
         {
           "name": "完成后动作（退出游戏/模拟器/关机/休眠…）",
-          "status": "partial",
-          "note": "无操作/睡眠/休眠/关机走 MaaCore CloseDown（协议有文档）；退出游戏/模拟器为附加字段，未实机验证"
+          "status": "full",
+          "note": "MaaCore CloseDown 已接：睡眠/休眠/关机/退出游戏/退出模拟器；「退出 MAA」无对应行为（服务端常驻），已如实说明"
         },
         {
           "name": "任务超时提醒",
@@ -157,18 +157,18 @@
         },
         {
           "name": "今日关卡提示",
-          "status": "none",
-          "note": ""
+          "status": "partial",
+          "note": "周计划编辑器实时显示今天将执行的关卡；桌面端的「日常开放关卡」提醒未做"
         },
         {
           "name": "自动重载资源",
-          "status": "none",
-          "note": ""
+          "status": "full",
+          "note": "运行包被替换后自动作废 MaaCore 资源缓存并断开旧会话（runtime.onRuntimeReplaced）"
         },
         {
           "name": "定时执行（日程）",
-          "status": "partial",
-          "note": "日程 UI + 存储已实现；服务端调度器未接"
+          "status": "full",
+          "note": "日程 UI/存储 + 服务端调度器（30s tick）：daily/weekdays/weekends/星期几，lastRun 防重，执行中自动跳过；日程页与首页显示下次触发"
         }
       ]
     },
@@ -177,13 +177,13 @@
       "items": [
         {
           "name": "作业路径/神秘代码识别",
-          "status": "none",
-          "note": ""
+          "status": "partial",
+          "note": "作业列表来自运行包 resource/copilot（76 个官方作业，按 SSS_/Paradox_ 前缀分类为保全派驻/主线/悖论）；本地 .json 文件可解析（stage_name/doc.title）；神秘代码粘贴与作业站在线搜索未接"
         },
         {
           "name": "多作业模式/批量导入",
-          "status": "none",
-          "note": ""
+          "status": "partial",
+          "note": "多作业模式 UI + 作业队列（添加/按关卡名排序/清空/单条删除）已实现；批量下发未接（当前下发首个作业）"
         },
         {
           "name": "视频识别",
@@ -192,8 +192,8 @@
         },
         {
           "name": "自动编队/借助战/补充低信赖/模组",
-          "status": "none",
-          "note": ""
+          "status": "partial",
+          "note": "formation/loop_times/use_sanity_potion/ignore_requirements 等 Copilot 协议字段已随任务下发；真机效果待验证"
         },
         {
           "name": "作业分享/评价",
@@ -207,23 +207,23 @@
       "items": [
         {
           "name": "公招识别（Tag/时间）",
-          "status": "none",
-          "note": ""
+          "status": "full",
+          "note": "POST /api/tools/run 真实调用 Recruit 任务；RecruitResult 按官方回调结构渲染（Tag/组合星级/干员按自身星级着色）"
         },
         {
           "name": "仓库识别（导出 JSON）",
-          "status": "none",
-          "note": ""
+          "status": "partial",
+          "note": "POST /api/tools/run 真实调用 Depot；DepotInfo 结果按 item_index.json 映射为物品名+数量渲染；导出未实现"
         },
         {
           "name": "干员识别",
-          "status": "none",
-          "note": ""
+          "status": "full",
+          "note": "POST /api/tools/run 真实调用 OperBox；OperBoxInfo 渲染（稀有度着色/精英/等级/潜能）"
         },
         {
           "name": "牛牛抽卡/牛牛监控/牛杂",
-          "status": "na",
-          "note": "桌面端娱乐功能"
+          "status": "partial",
+          "note": "牛牛监控/抽卡已接设备实时画面（ADB screencap，目标帧率 + 实测 FPS）；牛杂界面按官方资源表还原（活动列表/文案/日志），执行未接"
         }
       ]
     },
@@ -282,8 +282,8 @@
         },
         {
           "name": "版本更新设置",
-          "status": "partial",
-          "note": "Runtime 页手动/自动下载运行包"
+          "status": "full",
+          "note": "检查更新与官方 release 对比（5 分钟缓存）、确认后才下载、官方 assets[].digest SHA-256 校验；运行包升级无需重建镜像"
         },
         {
           "name": "配置管理（多套配置切换）",
@@ -344,6 +344,16 @@
           "name": "任务目录 / 参数 schema 由协议文档自动生成",
           "status": "full",
           "note": "18 种任务类型 / 168 个协议字段，改版只需重跑生成脚本"
+        },
+        {
+          "name": "移动端适配（≤760px 单列 + 抽屉导航）",
+          "status": "full",
+          "note": "单列堆叠、官方 collapsed-float 抽屉导航、各页面无横向溢出（393px 实测）"
+        },
+        {
+          "name": "前后端接入（状态轮询/配置持久化/实时画面）",
+          "status": "full",
+          "note": "运行状态 2.5s 轮询、任务配置防抖持久化、设备实时画面、检查更新与资源校验"
         }
       ]
     }

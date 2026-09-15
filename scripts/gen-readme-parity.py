@@ -113,6 +113,8 @@ T = {
     "日志实时流（WebSocket）": ("Live log stream (WebSocket)", "ログのリアルタイム配信（WebSocket）", "실시간 로그 스트림 (WebSocket)"),
     "windows-ui 组件体系（官方 dist vendored）": ("windows-ui component system (vendored official dist)", "windows-ui コンポーネント体系（公式 dist 同梱）", "windows-ui 컴포넌트 체계 (공식 dist 동봉)"),
     "功能对照页（本页）": ("Feature parity page (this section)", "機能対照ページ（本セクション）", "기능 대조 페이지 (본 섹션)"),
+    "移动端适配（≤760px 单列 + 抽屉导航）": ("Mobile layout (single column + drawer nav below 760px)", "モバイル対応（760px 以下 1 カラム + ドロワー）", "모바일 대응 (760px 이하 1열 + 드로어)"),
+    "前后端接入（状态轮询/配置持久化/实时画面）": ("Backend wiring (status polling / config persistence / live view)", "バックエンド接続（状態ポーリング・設定永続化・ライブ画面）", "백엔드 연동 (상태 폴링·설정 영구 저장·라이브 화면)"),
 }
 
 LABEL = {
