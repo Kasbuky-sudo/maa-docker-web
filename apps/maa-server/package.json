@@ -1,6 +1,6 @@
 {
   "name": "@maa-docker-web/maa-server",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "MAA Docker Web - management API service wrapping the official MAA Linux runtime",
   "type": "commonjs",
   "main": "src/index.js",
@@ -12,6 +12,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "undici": "^6.28.1",
     "ws": "^8.18.0"
   },
   "license": "MIT"

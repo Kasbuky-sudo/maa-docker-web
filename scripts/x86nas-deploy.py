@@ -12,6 +12,7 @@ warnings.filterwarnings("ignore")
 
 HOST = sys.argv[1] if len(sys.argv) > 1 else "192.168.31.87"
 VERSION = sys.argv[2] if len(sys.argv) > 2 else "main"
+PROXY = sys.argv[3] if len(sys.argv) > 3 else ""
 USER = "user"
 PASSWORD = "song721026"
 BASE = "/vol1/1000/docker/maa-docker-web"
@@ -32,6 +33,8 @@ services:
       TZ: Asia/Shanghai
       LOG_LEVEL: info
       AUTO_FETCH_RUNTIME: "true"
+      HTTP_PROXY: {proxy}
+      HTTPS_PROXY: {proxy}
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
@@ -48,7 +51,7 @@ services:
     depends_on:
       maa-server:
         condition: service_healthy
-""".format(version=VERSION)
+""".format(version=VERSION, proxy=PROXY)
 
 ENV_FILE = """WEB_PORT=8080
 VERSION={version}

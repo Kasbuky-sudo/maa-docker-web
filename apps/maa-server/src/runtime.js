@@ -136,7 +136,18 @@ async function fetchRuntime(progressCb = () => {}) {
     fs.mkdirSync(RUNTIME_DIR(), { recursive: true });
     setStatus('downloading');
     logger.info('runtime', `downloading ${asset.url}`);
-    const res = await fetch(asset.url, { redirect: 'follow' });
+
+    // Optional egress proxy (Node fetch ignores HTTP(S)_PROXY env by default)
+    const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy
+      || process.env.HTTP_PROXY || process.env.http_proxy || '';
+    const fetchOptions = { redirect: 'follow' };
+    if (proxyUrl) {
+      const { ProxyAgent } = require('undici');
+      fetchOptions.dispatcher = new ProxyAgent(proxyUrl);
+      logger.info('runtime', `using proxy ${proxyUrl}`);
+    }
+
+    const res = await fetch(asset.url, fetchOptions);
     if (!res.ok) throw new Error(`download failed: HTTP ${res.status}`);
     const total = Number(res.headers.get('content-length')) || 0;
     let received = 0;
