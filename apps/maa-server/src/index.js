@@ -219,7 +219,8 @@ const routes = {
 
   /* ---- 设备截图：ADB screencap，直接返回 PNG（监控 / 实时画面用） ---- */
   'GET /api/device/screenshot': (req, url, res) => {
-    const conn = readConnection();
+    // runner.snapshot().connection 里就有 address/adbPath，不必重读文件
+    const conn = (runner.snapshot() || {}).connection || {};
     const address = conn.address;
     if (!address) {
       res.writeHead(409, { 'Content-Type': 'application/json' });
