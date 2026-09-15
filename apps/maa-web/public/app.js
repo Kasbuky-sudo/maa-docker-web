@@ -1903,53 +1903,323 @@ function renderFullLogs() {
   return LOG_ENTRIES.filter(logMatches).map(logRowText).join('\n');
 }
 
-/* ===== Page: Copilot ===== */
+/* ===== Page: Copilot（自动战斗）=====
+ * 结构对齐 MaaWpfGui CopilotView：四个页签（主线/故事集/SideStory · 保全派驻 ·
+ * 悖论模拟 · 其他活动）+ 作业路径/神秘代码 + 开始 + 各页签不同的开关 + 右侧
+ * 小贴士/战斗日志 + 多作业模式下的作业列表。
+ * 后端 Copilot API 尚未实现：开始后为本地模拟，界面有明确标注。 */
+var copilotTab = 'main';
+
+var COPILOT_TABS = [
+  ['main', '主线/故事集/SideStory'],
+  ['sa', '保全派驻'],
+  ['pm', '悖论模拟'],
+  ['other', '其他活动']
+];
+
+/* 每个页签的开关配置（对齐 CopilotView.xaml 的可见性） */
+var COPILOT_TAB_CFG = {
+  main:   { autoSquad: true, multi: true, loop: false },
+  sa:     { autoSquad: false, multi: true, loop: true },
+  pm:     { autoSquad: false, multi: true, loop: false },
+  other:  { autoSquad: true, multi: true, loop: true, autoSquadDisabled: true }
+};
+
+/* 作业文件树（mock：正式版从服务端 resource/copilot 目录读取） */
+var COPILOT_FILES = [
+  { name: 'OF-1_credit_fight.json', stage: 'OF-1' },
+  { name: '沃尔岗山丘_Spier_Foothills.json', stage: 'Spier_Foothills' },
+  { name: '日达诺夫园区.json', stage: 'NV-1' },
+  { name: '荒废灯塔_abandoned_lighthouse.json', stage: 'abandoned_lighthouse' },
+  { name: '雷神工业测试平台_Raythean_Industries_Test_Platform.json', stage: 'Raythean_Industries_Test_Platform' },
+  { name: 'ddd.json', stage: '1-7' }
+];
+
+var COPILOT_TIP = [
+  '按界面开始后，若使用「多作业模式」，请从队列列表「等级/编号」页签点击右键，然后可以进行（包括批量）操作。',
+  '5. 干员若被标记为「特别关注」，可能影响「自动编队」的识别与选择。建议使用「自动编队」时移除关注，或在报错后关闭「自动编队」，根据提示手动补充缺失的干员。',
+  '6. ZOOT 作业站的神秘代码可通过输入框右侧的粘贴按钮粘贴，自动识别格式：\n· prts://s = 作业集\n· prts:// = 单个作业',
+  '支持作业格式:',
+  '· 添加/左键 单选环境位，右键 = 突袭难度。',
+  '· 添加/左键 = 单选悖论模拟，右键 = 仅切换技能导航。',
+  '· 请在对应界面启动，不支持跨章节导航。',
+  '· 追加自定干员名称无效，且未来版本不支持自动导航。'
+];
+
+var COPILOT_WARN =
+  '使用此平台时，自动战斗某些功能（如自动编队）可能无法正常运行，建议尝试重启或更换模拟器！' +
+  '如使用 MuMu 模拟器，请在「设置 - 连接设置 - 连接配置」选择对应模拟器，并开启下方显示的截图增强。';
+
+/* 战斗日志（本地模拟） */
+var COPILOT_LOG = [];
+var copilotSimTimer = null;
+
+function copilotLog(level, msg) {
+  COPILOT_LOG.push({ level: level, msg: msg });
+  if (COPILOT_LOG.length > 200) COPILOT_LOG.splice(0, COPILOT_LOG.length - 200);
+  var box = document.getElementById('cp-log');
+  if (box) {
+    box.insertAdjacentHTML('beforeend', '<div class="mdw-cp-line lv-' + level + '">' + esc(msg) + '</div>');
+    box.scrollTop = box.scrollHeight;
+  }
+}
+
 function pageCopilot(el) {
+  var cfg = COPILOT_TAB_CFG[copilotTab];
   el.innerHTML =
-    '<h2 class="mdw-h1">自动战斗</h2>' +
-    '<div class="mdw-copilot-tabs">' +
-      '<div class="mdw-copilot-tab active">主线 / 故事集 / SideStory</div>' +
-      '<div class="mdw-copilot-tab">保全派驻</div>' +
-      '<div class="mdw-copilot-tab">悖论模拟</div>' +
-      '<div class="mdw-copilot-tab">其他活动</div>' +
-    '</div>' +
-    '<div class="mdw-copilot-body">' +
-      '<div class="mdw-copilot-left">' +
-        '<div class="mdw-row block"><div class="mdw-row-label">作业搜索</div>' + textHtml('cp-search', '', '按关卡名 / 作者搜索（正式版走 MAA 作业站）') + '</div>' +
-        '<div class="mdw-row block"><div class="mdw-row-label">作业路径</div>' + selectHtml([['', '选择作业文件...'], ['copilot1', '作业 1'], ['copilot2', '作业 2']], '', 'cp-path') + '</div>' +
-        blockHtml('循环次数', numHtml('cp-loop', 1, 1, 999), '重复执行作业的次数。') +
-        blockHtml('编队预设', selectHtml([['1', '1 号编队'], ['2', '2 号编队'], ['3', '3 号编队'], ['4', '4 号编队']], '1', 'cp-squad')) +
-        '<button type="button" class="app-btn mdw-btn-primary" style="height:40px;font-size:15px;width:100%;justify-content:center;border-radius:4px">开始</button>' +
-        '<label class="mdw-check"><input type="checkbox" class="app-checkbox" id="cp-auto-formation"/><span>自动编队</span></label>' +
-        '<label class="mdw-check"><input type="checkbox" class="app-checkbox" id="cp-assist"/><span>使用助战干员</span></label>' +
-        '<label class="mdw-check"><input type="checkbox" class="app-checkbox" id="cp-multi-mode"/><span>多作业模式</span></label>' +
-        '<a href="#" class="mdw-muted" style="font-size:13px">自动战斗作业分享</a>' +
+    '<div class="mdw-cp">' +
+      '<div class="mdw-cp-tabs" id="cp-tabs">' +
+        COPILOT_TABS.map(function (t) {
+          return '<div class="mdw-cp-tab' + (t[0] === copilotTab ? ' active' : '') + '" data-tab="' + t[0] + '">' + esc(t[1]) + '</div>';
+        }).join('') +
       '</div>' +
-      '<div class="mdw-copilot-right">' +
-        '<div class="mdw-copilot-warn">请先选择作业文件并确认编队后再开始执行。作业文件中干员名需与游戏内一致。</div>' +
-        '<div class="mdw-copilot-log-group">' +
-          '<div class="head">编队确认</div>' +
-          '<div class="mdw-copilot-log-item"><span class="mdw-copilot-log-time">14:32:01</span><span>识别作业干员列表...</span></div>' +
-          '<div class="mdw-copilot-log-item"><span class="mdw-copilot-log-time">14:32:03</span><span>编队完成：银灰、艾雅法拉、闪灵</span></div>' +
-          '<div class="mdw-copilot-log-cost">耗时 2.3s</div>' +
+      '<div class="mdw-cp-grid">' +
+        '<div class="mdw-cp-left">' +
+          '<div class="mdw-cp-path-row">' +
+            '<div class="mdw-cp-combo" id="cp-combo">' +
+              '<input type="text" class="app-input-text mdw-cp-input" id="cp-path" placeholder="作业路径/神秘代码" autocomplete="off"/>' +
+              '<div class="mdw-cp-dropdown" id="cp-dropdown">' +
+                '<div class="mdw-cp-file" data-name="OF-1_credit_fight.json">OF-1_credit_fight.json</div>' +
+                '<div class="mdw-cp-folder" data-expand="0">▸ 常规关卡</div>' +
+                '<div class="mdw-cp-file indent" data-name="沃尔岗山丘_Spier_Foothills.json">沃尔岗山丘_Spier_Foothills</div>' +
+                '<div class="mdw-cp-file indent" data-name="日达诺夫园区.json">日达诺夫园区</div>' +
+                '<div class="mdw-cp-file" data-name="荒废灯塔_abandoned_lighthouse.json">荒废灯塔_abandoned_lighthouse</div>' +
+                '<div class="mdw-cp-file" data-name="雷神工业测试平台_Raythean_Industries_Test_Platform.json">雷神工业测试平台_Raythean_Industries_Test_Platform</div>' +
+                '<div class="mdw-cp-file" data-name="ddd.json">ddd</div>' +
+              '</div>' +
+            '</div>' +
+            '<button type="button" class="app-btn mdw-cp-icon" id="cp-browse" title="打开作业文件（.json）"><i class="icons10 icons10-folder"></i></button>' +
+            '<button type="button" class="app-btn mdw-cp-icon" id="cp-paste" title="粘贴神秘代码（prts:// 或 prts://s）"><i class="icons10 icons10-copy"></i></button>' +
+            '<input type="file" id="cp-file" accept=".json,application/json" style="display:none"/>' +
+          '</div>' +
+          '<button type="button" class="app-btn mdw-btn-primary mdw-cp-start" id="cp-start">开始</button>' +
+          '<div class="mdw-cp-checks">' +
+            (cfg.autoSquad
+              ? '<label class="mdw-check' + (cfg.autoSquadDisabled ? ' disabled' : '') + '"><input type="checkbox" class="app-checkbox" id="cp-auto-formation"' + (cfg.autoSquadDisabled ? ' disabled' : '') + '/><span>自动编队</span></label>' + helpHtml('自动识别作业所需的干员并编队。干员被标记「特别关注」可能影响识别。')
+              : '') +
+            '<label class="mdw-check"><input type="checkbox" class="app-checkbox" id="cp-multi"/><span>多作业模式</span></label>' + helpHtml('仅支持同一章节/页面内导航；启用后选择单个作业会自动加入作业列表。') +
+            (cfg.loop ? '<div class="mdw-cp-loop"><label class="mdw-check"><input type="checkbox" class="app-checkbox" id="cp-loop-en"/><span>循环次数</span></label>' + numHtml('cp-loop', 1, 1, 999) + '</div>' : '') +
+          '</div>' +
+          '<div class="mdw-cp-note">原型说明：后端 Copilot API 尚未接入，「开始」为本地模拟流程；作业文件仅本地解析，不会下发到 MaaCore。</div>' +
         '</div>' +
-        '<div class="mdw-copilot-log-group">' +
-          '<div class="head">战斗执行</div>' +
-          '<div class="mdw-copilot-log-item"><span class="mdw-copilot-log-time">14:32:05</span><span>部署 银灰 @ (3,2)</span></div>' +
-          '<div class="mdw-copilot-log-item"><span class="mdw-copilot-log-time">14:32:08</span><span>部署 艾雅法拉 @ (4,3)</span></div>' +
-          '<div class="mdw-copilot-log-item"><span class="mdw-copilot-log-time">14:32:12</span><span>部署 闪灵 @ (5,2)</span></div>' +
-          '<div class="mdw-copilot-log-item"><span class="mdw-copilot-log-time">14:32:20</span><span>技能释放：银灰 (3,2)</span></div>' +
-          '<div class="mdw-copilot-log-item"><span class="mdw-copilot-log-time">14:32:35</span><span>战斗结束 · 胜利</span></div>' +
-          '<div class="mdw-copilot-log-cost">耗时 30.2s</div>' +
+        '<div class="mdw-cp-right">' +
+          '<div id="cp-right-main">' +
+            '<div class="mdw-cp-tip">' +
+              COPILOT_TIP.map(function (t) { return '<p>' + esc(t).replace(/\n/g, '<br/>') + '</p>'; }).join('') +
+            '</div>' +
+            '<div class="mdw-cp-log" id="cp-log"></div>' +
+          '</div>' +
+          '<div id="cp-right-multi" style="display:none">' +
+            '<div class="mdw-cp-list-head">' + esc('作业列表') + '</div>' +
+            '<div class="mdw-cp-list" id="cp-list"></div>' +
+            '<div class="mdw-cp-list-tools">' +
+              '<button type="button" class="app-btn mdw-cp-tool" id="cp-add-stage" title="添加作业到列表"><i class="icons10 icons10-plus"></i></button>' +
+              '<input type="text" class="app-input-text mdw-cp-stage-input" id="cp-stage-name" placeholder="关卡名，例: 1-7"/>' +
+              '<button type="button" class="app-btn mdw-cp-tool" id="cp-sort" title="按关卡名排序"><i class="icons10 icons10-sorting"></i></button>' +
+              '<button type="button" class="app-btn mdw-cp-tool mdw-cp-danger" id="cp-clear" title="清空作业列表"><i class="icons10 icons10-trash"></i></button>' +
+            '</div>' +
+          '</div>' +
         '</div>' +
-        '<a href="#" class="mdw-muted" style="font-size:13px">自动战斗地图坐标</a>' +
+      '</div>' +
+      '<div class="mdw-cp-links">' +
+        '<a href="https://prts.maa.plus/" target="_blank" rel="noopener">自动战斗#作业分享</a>' +
+        '<a href="https://map.ark-nights.com/" target="_blank" rel="noopener">自动战斗#地图坐标</a>' +
       '</div>' +
     '</div>';
 
-  el.querySelectorAll('.mdw-copilot-tab').forEach(function (t) {
-    t.addEventListener('click', function () {
-      el.querySelectorAll('.mdw-copilot-tab').forEach(function (x) { x.classList.toggle('active', x === t); });
+  bindCopilotEvents(el);
+  renderCopilotLog();
+}
+
+function renderCopilotLog() {
+  var box = document.getElementById('cp-log');
+  if (!box) return;
+  box.innerHTML = COPILOT_LOG.map(function (e) {
+    return '<div class="mdw-cp-line lv-' + e.level + '">' + esc(e.msg) + '</div>';
+  }).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+function copilotQueueRender() {
+  var box = document.getElementById('cp-list');
+  if (!box) return;
+  if (!COPILOT_QUEUE.length) {
+    box.innerHTML = '<div class="mdw-cp-list-empty">暂无作业。在左侧选择作业文件，或用下方按钮添加。</div>';
+    return;
+  }
+  box.innerHTML = COPILOT_QUEUE.map(function (q, i) {
+    return '<div class="mdw-cp-list-item">' +
+      '<span class="mdw-cp-idx">' + (i + 1) + '</span>' +
+      '<span class="mdw-cp-name">' + esc(q.name) + '</span>' +
+      '<span class="mdw-cp-stage">' + esc(q.stage || '—') + '</span>' +
+      '<button type="button" class="app-btn mdw-cp-del" data-i="' + i + '" title="删除"><i class="icons10 icons10-trash"></i></button>' +
+    '</div>';
+  }).join('');
+  box.querySelectorAll('.mdw-cp-del').forEach(function (b) {
+    b.addEventListener('click', function () {
+      COPILOT_QUEUE.splice(+b.dataset.i, 1);
+      copilotQueueRender();
     });
+  });
+}
+
+var COPILOT_QUEUE = [];
+var COPILOT_MULTI = false;
+
+function copilotWarn() { copilotLog('warn', COPILOT_WARN); }
+
+function copilotSimulate(path) {
+  var name = path || 'OF-1_credit_fight.json';
+  if (copilotSimTimer) { clearInterval(copilotSimTimer); copilotSimTimer = null; }
+  COPILOT_LOG = [];
+  copilotLog('info', '加载作业文件: ' + name);
+  copilotWarn();
+  var steps = [
+    ['info', '开始编队 [先锋]'],
+    ['info', '选择干员:先锋 => 德克萨斯'],
+    ['info', '已开始行动'],
+    ['info', '当前步骤:切换速度'],
+    ['info', '当前步骤:部署 先锋'],
+    ['info', '当前步骤:开启技能'],
+    ['info', '当前步骤:部署 近卫'],
+    ['info', '当前步骤:开启技能'],
+    ['warn', COPILOT_WARN],
+    ['info', '战斗结束 · 胜利'],
+    ['info', (COPILOT_MULTI ? '作业队列完成（共 ' + COPILOT_QUEUE.length + ' 项）' : '任务完成')]
+  ];
+  var i = 0;
+  copilotSimTimer = setInterval(function () {
+    if (i >= steps.length) { clearInterval(copilotSimTimer); copilotSimTimer = null; return; }
+    copilotLog(steps[i][0], steps[i][1]);
+    i += 1;
+  }, 700);
+}
+
+function bindCopilotEvents(el) {
+  // 页签
+  el.querySelectorAll('#cp-tabs .mdw-cp-tab').forEach(function (t) {
+    t.addEventListener('click', function () {
+      copilotTab = t.dataset.tab;
+      pageCopilot(el);
+    });
+  });
+
+  // 作业路径下拉（自定义，对齐 MAA 的文件树）
+  var input = el.querySelector('#cp-path');
+  var dd = el.querySelector('#cp-dropdown');
+  if (input && dd) {
+    input.addEventListener('focus', function () { dd.style.display = 'block'; });
+    input.addEventListener('blur', function () { setTimeout(function () { dd.style.display = 'none'; }, 180); });
+    dd.querySelectorAll('.mdw-cp-file').forEach(function (f) {
+      f.addEventListener('mousedown', function (ev) {
+        ev.preventDefault();
+        input.value = f.dataset.name;
+        dd.style.display = 'none';
+        copilotLog('info', '已选择作业: ' + f.dataset.name);
+      });
+    });
+    dd.querySelectorAll('.mdw-cp-folder').forEach(function (f) {
+      f.addEventListener('mousedown', function (ev) {
+        ev.preventDefault();
+        var open = f.dataset.expand === '1';
+        f.dataset.expand = open ? '0' : '1';
+        f.textContent = (open ? '▸ ' : '▾ ') + f.textContent.replace(/^[▸▾]\s*/, '');
+        dd.querySelectorAll('.mdw-cp-file.indent').forEach(function (c) {
+          c.style.display = open ? 'none' : '';
+        });
+      });
+    });
+  }
+
+  // 打开本地作业文件（真实读取 + JSON 解析）
+  var browse = el.querySelector('#cp-browse');
+  var fileInput = el.querySelector('#cp-file');
+  if (browse && fileInput) {
+    browse.addEventListener('click', function () { fileInput.click(); });
+    fileInput.addEventListener('change', function () {
+      var f = fileInput.files && fileInput.files[0];
+      if (!f) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        try {
+          var doc = JSON.parse(String(reader.result));
+          var stage = (doc && (doc.stage || (doc.doc && doc.doc.title))) || '';
+          input.value = f.name;
+          copilotLog('info', '已读取作业文件: ' + f.name + (stage ? '（关卡: ' + stage + '）' : '') + ' —— 本地解析，未下发 MaaCore');
+          if (COPILOT_MULTI) {
+            COPILOT_QUEUE.push({ name: f.name, stage: String(stage || '') });
+            copilotQueueRender();
+          }
+        } catch (e) {
+          copilotLog('error', '解析作业文件错误！');
+        }
+      };
+      reader.readAsText(f, 'utf-8');
+      fileInput.value = '';
+    });
+  }
+
+  // 神秘代码粘贴
+  var paste = el.querySelector('#cp-paste');
+  if (paste) paste.addEventListener('click', function () {
+    openModal({
+      title: '粘贴神秘代码',
+      body: '<textarea class="app-textarea" id="cp-code" rows="5" placeholder="prts://s = 作业集&#10;prts:// = 单个作业"></textarea>',
+      buttons: [{ label: '取消' }, {
+        label: '导入', primary: true,
+        onClick: function () {
+          var v = (document.getElementById('cp-code').value || '').trim();
+          if (!v) return false;
+          copilotLog('info', '已从神秘代码导入: ' + (v.slice(0, 60)) + (v.length > 60 ? '…' : '') + '（原型：未连接作业站）');
+        }
+      }]
+    });
+  });
+
+  // 多作业模式 → 切换右侧面板
+  var multi = el.querySelector('#cp-multi');
+  if (multi) multi.addEventListener('change', function () {
+    COPILOT_MULTI = multi.checked;
+    var m = el.querySelector('#cp-right-multi');
+    var n = el.querySelector('#cp-right-main');
+    if (m) m.style.display = COPILOT_MULTI ? '' : 'none';
+    if (n) n.style.display = COPILOT_MULTI ? 'none' : '';
+    if (COPILOT_MULTI) copilotQueueRender();
+  });
+
+  // 作业列表工具
+  var add = el.querySelector('#cp-add-stage');
+  if (add) add.addEventListener('click', function () {
+    var stage = (el.querySelector('#cp-stage-name').value || '').trim();
+    var path = (el.querySelector('#cp-path').value || '').trim();
+    if (!path) { copilotLog('warn', '未选择作业'); return; }
+    COPILOT_QUEUE.push({ name: path, stage: stage });
+    copilotQueueRender();
+  });
+  var sort = el.querySelector('#cp-sort');
+  if (sort) sort.addEventListener('click', function () {
+    COPILOT_QUEUE.sort(function (a, b) { return (a.stage || '').localeCompare(b.stage || ''); });
+    copilotQueueRender();
+  });
+  var clear = el.querySelector('#cp-clear');
+  if (clear) clear.addEventListener('click', function () {
+    if (!COPILOT_QUEUE.length) return;
+    openConfirmModal('清空作业列表', '确定清空作业列表中的全部作业吗？', function () {
+      COPILOT_QUEUE = [];
+      copilotQueueRender();
+    });
+  });
+
+  // 开始
+  var start = el.querySelector('#cp-start');
+  if (start) start.addEventListener('click', function () {
+    var path = (el.querySelector('#cp-path').value || '').trim();
+    if (!path) { openInfoModal('自动战斗', '未选择作业'); return; }
+    if (COPILOT_MULTI && !COPILOT_QUEUE.length) {
+      copilotLog('warn', '正在使用「多作业模式」，但未添加任何作业');
+      return;
+    }
+    copilotSimulate(path);
   });
 }
 
