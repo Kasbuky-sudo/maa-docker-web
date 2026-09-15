@@ -654,3 +654,22 @@ body {
 .mdw-cowtools-left { flex: 0 0 220px; display: flex; flex-direction: column; gap: 12px; }
 .mdw-cowtools-right { flex: 1 1 320px; min-width: 0; }
 .mdw-cowtools-log { max-height: 40vh; overflow-y: auto; font-family: Consolas, monospace; font-size: 12.5px; line-height: 1.7; }
+
+/* ================= 后端接入：离线提示条 / 状态栏 ================= */
+.mdw-offline { display: none; }
+.mdw-offline.show {
+  display: flex; align-items: center; gap: 8px; padding: 7px 16px; font-size: 13px;
+  background: var(--color-day-primary-night-grey, #b98900); color: #fff;
+}
+.mdw-offline.show b { font-weight: 600; }
+
+.mdw-statusbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 0 16px; height: 28px; flex: 0 0 auto; font-size: 12px;
+  border-top: 1px solid var(--mdw-border);
+  background: var(--mdw-card-2); color: var(--mdw-muted);
+}
+.mdw-statusbar #sb-left { display: inline-flex; align-items: center; gap: 6px; }
+.mdw-statusbar .mdw-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mdw-muted); display: inline-block; }
+.mdw-statusbar .mdw-dot.ok { background: var(--color-success-default); }
+[data-theme="dark"] .mdw-statusbar { background: #2b2b2b; border-color: #3a3a3a; }

@@ -1,7 +1,9 @@
-# 前端 ↔ 后端接入说明（给 ZCode / 执行 Agent）
+# 前端 ↔ 后端接入说明
 
-> 状态：`apps/maa-web/public` 已经是新界面（v0.5.0），但**一行业务代码都没接后端**，
-> 页面上的数据全是 `app.js` 里的 mock 常量。本文件就是接入任务书。
+> 状态（2026-09-16）：**主体已接入**。`apps/maa-web/public` 的新界面已经跑在真实 API 上：
+> 运行状态轮询、连接配置读写、任务配置持久化、任务下发/停止、日志（HTTP + WebSocket）、
+> 首页系统信息、日程读写都已打通。下面的「已接入 / 未接入」是当前真实状态，
+> 未接入的部分需要**先补后端 API 或扩展服务端配置白名单**，不是前端能单方面完成的。
 
 ## 1. 仓库结构
 
@@ -42,18 +44,38 @@ tests/                     只有 server 侧 runtime/config 测试（node --test
 | GET | `/api/features/parity` | 功能对照数据 |
 | WS | `/api/ws` | 实时日志推送（首帧 hello，随后 logger 条目） |
 
-## 3. 要做的接入（按优先级）
+## 3. 接入状态
 
-1. **设备/连接**：`DEVICE` mock → `GET/PUT /api/connection` + `GET /api/runner/status` 轮询（2~3 s）；
-   「连接 / 截图测试」→ `POST /api/runner/test-connect`；右上角 chip 与任务页状态行由 `runner.status` 驱动。
-2. **任务队列**：任务类型与表单字段改为 `GET /api/tasks/catalog` 驱动（不要手写映射）；
-   配置变更防抖 600 ms → `PUT /api/tasks/config`；日程 → `GET/PUT /api/tasks/schedule`。
-3. **开始/停止**：`POST /api/tasks/execute`（携带队列 + 各任务参数）+ `POST /api/runner/stop`；
-   参数必须按 `maa-task-spec.json` 的字段类型强转后下发。
-4. **日志**：日志页 + 运行实况时间线接 `WS /api/ws`（级别过滤、自动跟随、复制、清空）。
-5. **首页/设置**：`GET /api/system/info`（CPU/内存）、`GET /api/version`、`GET /api/runtime/status`、
-   `GET /api/resources/info`；设置页的更新/资源项接对应 API；设置项写入 `PUT /api/config`。
-6. **小工具**：干员/仓库/公招识别的结果与「开始识别」先接 API 占位（后端暂无实现时前端要显式提示未实现，不要造假数据）。
+### 已接入（前端 ↔ 实测通过）
+
+| 能力 | 前端 | 后端 |
+|---|---|---|
+| 运行状态 | `RT` + 2.5s 轮询 `refreshRunnerStatus()`，驱动顶栏芯片 / 状态栏 / 任务页状态行 / 首页 | `GET /api/runner/status` |
+| 连接配置 | 设置 → 连接设置（地址/ADB 路径/连接配置/触控模式/客户端类型），改动即 PUT | `GET·PUT /api/connection` |
+| 连接 / 断开 | 顶栏按钮 + 设置页「测试连接」 | `POST /api/runner/test-connect`、`POST /api/runner/stop` |
+| 任务配置 | 控件 `id → OPT_IDS` 映射到 catalog 选项 id，防抖 600ms 保存；切任务/刷新自动回填；主题类字段先回填再重建联动下拉 | `GET·PUT /api/tasks/config` |
+| 任务下发 | 队列「Link Start!」→ 按顺序提交勾选任务；运行中变「停止」 | `POST /api/tasks/execute`（内部 `runner.start()`） |
+| 日志 | 日志页（级别过滤/复制/下载）+ 任务页运行实况时间线，实时追加 | `GET /api/logs`、`GET /api/logs/download`、`WS /api/ws` |
+| 首页 | 系统信息（内存/核心/架构/主机名/运行时间）、MAA 版本、运行包状态、下一班日程 | `/api/system/info`、`/api/version`、`/api/runtime/status`、`/api/tasks/schedule` |
+| 运行包 / 资源 | 首页「检查更新」「校验资源」 | `POST /api/runtime/fetch`、`POST /api/resources/verify` |
+| 任务目录 | `添加任务` 弹窗用 catalog 的 id/name；配置校验按 catalog 白名单 | `GET /api/tasks/catalog` |
+
+**离线预览**：任何 `fetch` 失败都会把页面切到「离线预览」模式（顶部黄条 + 状态栏提示），
+此时只读不写（保存类操作直接短路），页面仍可渲染 —— 这是刻意行为，不要改成静默失败。
+
+### 未接入（需要先动后端）
+
+1. **小工具**（公招/干员/仓库识别、牛牛监控、牛杂）：后端没有对应 API，
+   `TOOL_STATE` 仍是 mock。需要新增 `/api/tools/*` 并从 MaaCore 回调取结果；
+   在那之前前端**必须保留「未实现」提示**，不许造假数据。
+2. **自动战斗（Copilot）**：后端无 copilot API（MAA 的 Copilot 走作业站 + MaaCore Copilot 任务），整页未接。
+3. **设置里的其余分组**（启动/游戏/界面/通知/热键/性能）：服务端 `config.json` 目前只有
+   `serverName / logLevel / timezone / autoFetchRuntime` 四个白名单字段，需要先扩 `config.js` 的
+   `DEFAULTS` 与 `validate()`，前端再接 `PUT /api/config`。
+4. **日程调度器**：`/api/tasks/schedule` 只负责存取计划，服务端**没有 cron 触发逻辑**，
+   所以日程页明确写了「只保存计划不触发执行」。repeat（每天/工作日…）目前存在浏览器
+   localStorage，服务端 schema 还没有该字段。
+5. **完成后动作 ExitMAA**：Web 版服务端常驻，无对应行为，runner 已在日志里如实说明并忽略。
 
 ## 4. 硬性约束（违反会被用户打回）
 
@@ -72,8 +94,11 @@ tests/                     只有 server 侧 runtime/config 测试（node --test
 
 ## 5. 验收标准
 
-- 本地 `PORT=3100` 起服务，7 个页面（主页/一键长草/自动战斗/日程/小工具/日志/设置）全部有真实数据。
-- 连接设备后，任务页状态行、右上角 chip、首页卡片三处状态一致；点开始能真的下发任务并看到日志滚动。
-- 配置改动刷新页面后仍在（已持久化到服务端）。
-- 深色模式无硬编码色残留（切主题后无“白底白字/黑底黑字”区域）。
-- 无 console 报错，无原生 alert/confirm/prompt。
+- 本地：`PORT=3100 DATA_DIR=<临时目录> AUTO_FETCH_RUNTIME=false node apps/maa-server/src/index.js`，
+  打开 `http://127.0.0.1:3100/`，7 个页面无 console 报错。
+- 关掉服务端再打开页面：出现「离线预览」黄条，页面仍可用，写操作被拒绝并提示。
+- 改任意任务选项 → `data/config/tasks.json` 里出现对应字段；刷新后控件回填一致；
+  改 A 任务不会清掉 B 任务的配置；主题切换后难度/分队/角色等联动下拉能正确回填。
+- 点「Link Start!」：无设备/无运行包时给出**服务端返回的真实原因**（例如「MAA 运行包未就绪」），
+  不允许前端自己编提示。
+- 日志页能看到服务端日志并实时追加；深色模式无硬编码色残留。

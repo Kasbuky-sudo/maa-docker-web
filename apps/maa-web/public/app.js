@@ -7,10 +7,126 @@
 
 var $page = document.getElementById('page');
 
-/* ===== Mock device / runtime state (接后端时替换为 /api/runner/status 轮询) ===== */
-var DEVICE = { connected: false, address: '192.168.31.190:5555', maaVersion: 'v6.17.5' };
-var RUNNING = false;
-var runTimer = null;
+/* ============================================================
+ * 后端接入层
+ *  - 同源访问 /api/*（生产由 nginx 反代，本地开发由 maa-server 直接托管）
+ *  - 后端不可用时进入「离线预览」模式：页面仍可渲染，但状态条会明确提示
+ * ============================================================ */
+var BACKEND = { online: null, lastError: '' };
+
+function api(method, path, body) {
+  var opt = { method: method, headers: {} };
+  if (body !== undefined) {
+    opt.headers['Content-Type'] = 'application/json';
+    opt.body = JSON.stringify(body);
+  }
+  return fetch(path, opt).then(function (res) {
+    return res.text().then(function (text) {
+      var data = null;
+      try { data = text ? JSON.parse(text) : null; } catch (e) { data = { raw: text }; }
+      if (!res.ok) {
+        var msg = (data && data.error) || ('HTTP ' + res.status);
+        throw new Error(msg);
+      }
+      return data;
+    });
+  });
+}
+var GET = function (p) { return api('GET', p); };
+var PUT = function (p, b) { return api('PUT', p, b); };
+var POST = function (p, b) { return api('POST', p, b); };
+
+function markOnline(ok, err) {
+  var was = BACKEND.online;
+  BACKEND.online = ok;
+  if (!ok) BACKEND.lastError = err ? String(err.message || err) : '';
+  if (was !== null && was !== ok) renderOfflineBanner();
+  else if (was === null && ok === false) renderOfflineBanner();
+}
+
+function renderOfflineBanner() {
+  var el = document.getElementById('offline-banner');
+  if (!el) return;
+  if (BACKEND.online === false) {
+    el.className = 'mdw-offline show';
+    el.innerHTML = '<i class="icons10 icons10-warning"></i><span>后端未连接，当前为<b>离线预览</b>模式（数据为示例）。启动服务端后自动恢复。</span>';
+  } else {
+    el.className = 'mdw-offline';
+    el.textContent = '';
+  }
+}
+
+/* ===== 运行时状态（/api/runner/status 驱动，替代原 DEVICE/RUNNING mock） ===== */
+var RT = {
+  phase: 'idle', detail: '', connected: false, address: '',
+  maaVersion: '', maaOk: false, postAction: 'None',
+};
+var RUNNING_PHASES = ['loading', 'connecting', 'running', 'stopping'];
+
+function isRunning() { return RUNNING_PHASES.indexOf(RT.phase) >= 0; }
+
+/* 兼容旧代码：DEVICE.connected / RUNNING 的语义改为读运行时状态 */
+var DEVICE = {
+  get connected() { return !!RT.connected; },
+  set connected(v) { RT.connected = !!v; },
+  address: '192.168.31.190:5555',
+  maaVersion: 'v6.17.5',
+};
+Object.defineProperty(window, 'RUNNING', { get: isRunning });
+
+var PHASE_TEXT = {
+  idle: '空闲', loading: '加载资源', connecting: '连接设备', running: '任务执行中',
+  stopping: '停止中', done: '已完成', error: '出错',
+};
+
+/* 运行状态 → 界面（按钮文案、状态行、首页快捷操作） */
+function syncRuntimeUI() {
+  var running = isRunning();
+  var btn = document.getElementById('q-start');
+  if (btn) {
+    btn.textContent = running ? '停止' : 'Link Start!';
+    btn.classList.toggle('mdw-btn-danger', running);
+  }
+  var home = document.getElementById('home-run');
+  if (home) home.textContent = running ? '运行中…（' + (PHASE_TEXT[RT.phase] || RT.phase) + '）' : '开始一键长草';
+  var hc = document.getElementById('home-connect');
+  if (hc) hc.textContent = RT.connected ? '断开' : '连接设备';
+  var hs = document.getElementById('home-state');
+  if (hs) hs.textContent = deviceStatusText(true);
+  var sb = document.getElementById('sb-left');
+  if (sb) {
+    sb.innerHTML = '<span class="mdw-dot' + (RT.connected ? ' ok' : '') + '"></span>' +
+      (RT.connected ? '已连接 ' + esc(RT.address) : (RT.address ? '未连接 ' + esc(RT.address) : '设备未配置'));
+  }
+  var sbr = document.getElementById('sb-right');
+  if (sbr) sbr.textContent = (PHASE_TEXT[RT.phase] || RT.phase) + (RT.detail ? ' · ' + RT.detail : '');
+  document.querySelectorAll('.mdw-config-status').forEach(function (l) { l.textContent = deviceStatusText(); });
+}
+
+function refreshRunnerStatus() {
+  return GET('/api/runner/status').then(function (s) {
+    markOnline(true);
+    RT.phase = s.phase || 'idle';
+    RT.detail = s.detail || '';
+    RT.connected = !!s.connected;
+    RT.address = (s.connection && s.connection.address) || '';
+    RT.maaOk = !!(s.maa && s.maa.ok);
+    RT.maaVersion = s.maaVersion || RT.maaVersion;
+    if (RT.address) DEVICE.address = RT.address;
+    updateDeviceChip();
+    syncRuntimeUI();
+    return s;
+  }).catch(function (e) { markOnline(false, e); return null; });
+}
+
+function refreshConnection() {
+  return GET('/api/connection').then(function (r) {
+    var c = (r && r.connection) || {};
+    CONNECTION = Object.assign(CONNECTION, c);
+    if (c.address) DEVICE.address = c.address;
+    return CONNECTION;
+  }).catch(function () { return CONNECTION; });
+}
 
 function nowTime() {
   var d = new Date();
@@ -18,31 +134,265 @@ function nowTime() {
   return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
 }
 
-function deviceStatusText() {
-  return DEVICE.connected
-    ? DEVICE.address + ' · MAA ' + DEVICE.maaVersion + ' · ' + (RUNNING ? '运行中' : '空闲 · 等待执行')
-    : '设备未连接 · 请点击右上角「连接」';
+/* ===== 配置持久化（服务端 tasks.json）=====
+ * 控件 id → task-catalog.json 的选项 id。catalog 变了要同步这张表。 */
+var CONNECTION = { address: '', config: 'General', adbPath: '', touchMode: 'minitouch', clientType: 'Official' };
+var TASK_CFG = {};          // 服务端返回的配置
+var CATALOG = null;         // /api/tasks/catalog
+var saveTimer = null;
+
+var OPT_IDS = {
+  // 开始唤醒（含全局共用）
+  's-start-game': 'start_game_enabled', 's-client-type': 'client_type', 's-account-name': 'account_name',
+  // 理智作战
+  'f-medicine-num': 'medicine', 'f-stone-num': 'stone', 'f-times-num': 'times',
+  'f-material': 'drops', 'f-proxy': 'series', 'f-stage': 'stage',
+  'f-diplomat': 'DrGrandet', 'f-expire-medicine': 'expiring_medicine', 'f-em-hours': 'medicine_expire_days',
+  // 基建换班
+  'i-mode': 'mode', 'i-plan': 'plan_index', 'i-custom-config': 'filename', 'i-drone': 'drones',
+  'i-mood-threshold': 'threshold', 'i-auto-fill': 'replenish',
+  'i-clue-exchange': 'reception_clue_exchange', 'i-clue-give': 'reception_send_clue',
+  'i-training-continue': 'continue_training', 'i-felyne': 'fiammetta_recovery_enabled',
+  'i-redpine': 'use_pinus_sylvestris', 'i-perception': 'use_perception_information',
+  'i-human': 'use_worldly_plight', 'i-deepsea': 'use_abyssal_hunter',
+  // 自动公招
+  'r-max-times': 'times', 'r-expedited': 'expedite', 'r-expedited-max': 'expedite_times',
+  'r-confirm-3': 'confirm', 'r-confirm-4': 'confirm', 'r-confirm-5': 'confirm', 'r-confirm-6': 'confirm',
+  'r-multi-strategy': 'extra_tags_mode', 'r-refresh-3': 'refresh',
+  'r-keep-tags': 'preserve_tags', 'r-keep-tags-select': 'first_tags',
+  // 信用收支
+  'm-friends': 'visit_friends', 'm-of1': 'credit_fight', 'm-of1-squad-select': 'formation_index',
+  'm-auto-buy': 'shopping', 'm-buy-first': 'buy_first', 'm-blacklist': 'blacklist',
+  'm-ignore-blacklist': 'force_shopping_if_credit_full', 'm-only-discount': 'only_buy_discount',
+  'm-stop-low': 'reserve_max_credit',
+  // 领取奖励
+  'a-daily': 'award', 'a-mail': 'mail', 'a-free-draw': 'recruit', 'a-lucky-wall': 'orundum',
+  'a-mining': 'mining', 'a-monthly-pass': 'specialaccess',
+  // 自动肉鸽
+  'rg-theme': 'theme', 'rg-difficulty': 'difficulty', 'rg-strategy': 'mode', 'rg-squad': 'squad',
+  'rg-class': 'roles', 'rg-operator': 'core_char', 'rg-stop-times': 'starts_count',
+  'rg-invest-coin': 'investment_enabled', 'rg-invest-max': 'investments_count',
+  'rg-invest-stop': 'stop_when_investment_full', 'rg-assist': 'use_support',
+  'rg-assist-nonfriend': 'use_nonfriend_support', 'rg-pause-boss': 'stop_at_final_boss',
+  'rg-stop-max': 'stop_at_max_level', 'rg-elite2': 'start_with_elite_two',
+  'rg-elite2-only': 'only_start_with_elite_two', 'rg-dice': 'refresh_trader_with_dice',
+  'rg-monthly': 'monthly_squad_auto_iterate', 'rg-deep': 'deep_exploration_auto_iterate',
+  'rg-use-seed': 'start_with_seed',
+  // 生息演算
+  'rc-theme': 'theme', 'rc-mode': 'mode', 'rc-craft': 'tools_to_craft',
+  'rc-craft-points': 'num_craft_batches', 'rc-increment': 'increment_mode', 'rc-clear-store': 'clear_store',
+};
+
+/* 多选控件（同一选项 id 的多个复选框）声明 */
+var MULTI_IDS = {
+  'i': 'facility',        // data-facility
+  'r': 'confirm'          // r-confirm-3/4/5/6
+};
+
+function optIdOf(el) {
+  var id = el.id || '';
+  if (el.dataset && el.dataset.facility) return 'facility';
+  return OPT_IDS[id] || null;
+}
+
+function collectTaskConfig() {
+  var out = {};
+  var selected = TASKS.map(function (t) { return baseTaskId(t.id); });
+  document.querySelectorAll('#task-config [id], .mdw-config-global [id]').forEach(function (el) {
+    var opt = optIdOf(el);
+    if (!opt) return;
+    var taskId = baseTaskId(selectedTask);
+    if (!out[taskId]) out[taskId] = {};
+    if (el.type === 'checkbox') {
+      if (opt === 'confirm') {
+        // 多值：只保留勾选的星级
+        out[taskId].confirm = out[taskId].confirm || [];
+        var star = (el.id.match(/r-confirm-(\d)/) || [])[1];
+        if (el.checked && star) out[taskId].confirm.push(Number(star));
+        return;
+      }
+      out[taskId][opt] = !!el.checked;
+      return;
+    }
+    if (el.dataset && el.dataset.facility) {
+      out[taskId].facility = out[taskId].facility || [];
+      if (el.checked) out[taskId].facility.push(el.dataset.facility);
+      return;
+    }
+    if (el.tagName === 'SELECT') {
+      out[taskId][opt] = el.value;
+      return;
+    }
+    if (el.type === 'number' || el.type === 'range') { out[taskId][opt] = Number(el.value); return; }
+    if (el.type === 'text' || el.tagName === 'TEXTAREA') {
+      if (opt === 'fiammetta_targets') return;
+      out[taskId][opt] = el.value;
+    }
+  });
+  // 菲亚梅塔目标（3 个下拉合成数组）
+  var fia = [1, 2, 3].map(function (i) {
+    var s = document.getElementById('i-felyne-' + i);
+    return s ? s.value : '';
+  }).filter(Boolean);
+  if (fia.length) {
+    out.infrast = out.infrast || {};
+    out.infrast.fiammetta_targets = fia;
+  }
+  // 更换主题（多行文本框 → 数组）
+  var themes = switchThemes.map(function (t) { return String(t).trim(); }).filter(Boolean);
+  if (themes.length) { out.switchtheme = out.switchtheme || {}; out.switchtheme.themes = themes; }
+  // 队列级
+  var post = document.getElementById('q-post');
+  out._meta = { postAction: post ? post.value : (TASK_CFG._meta && TASK_CFG._meta.postAction) || 'None' };
+  // 只保留 catalog 里存在的任务 id
+  var valid = {};
+  (CATALOG ? CATALOG.tasks : []).forEach(function (t) { if (out[t.id]) valid[t.id] = out[t.id]; });
+  if (out._meta) valid._meta = out._meta;
+  return valid;
+}
+
+function saveTaskConfig() {
+  if (BACKEND.online === false) return;
+  var current = collectTaskConfig();
+  // 服务端 PUT 是整体替换：必须带上其它任务已保存的配置
+  var payload = {};
+  Object.keys(TASK_CFG || {}).forEach(function (k) {
+    if (k === '_meta' || current[k]) return;
+    payload[k] = TASK_CFG[k];
+  });
+  Object.keys(current).forEach(function (k) { payload[k] = current[k]; });
+  TASK_CFG = payload;
+  PUT('/api/tasks/config', payload).then(function () {
+    var ind = document.getElementById('save-ind');
+    if (ind) {
+      ind.textContent = '已保存 ' + nowTime();
+      setTimeout(function () { if (ind.textContent.indexOf('已保存') === 0) ind.textContent = ''; }, 2000);
+    }
+  }).catch(function (e) { markOnline(false, e); });
+}
+
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveTaskConfig, 600);
+}
+
+/* 把服务端配置回填到控件（渲染后调用） */
+function applyTaskConfig(root) {
+  if (!TASK_CFG || !Object.keys(TASK_CFG).length) return;
+  var taskId = baseTaskId(selectedTask);
+  var cfg = TASK_CFG[taskId];
+  if (!cfg) return;
+  // 先应用主题（会重建联动下拉），再回填依赖项
+  if (taskId === 'roguelike' && cfg.theme) {
+    var rt = document.getElementById('rg-theme');
+    if (rt) { rt.value = cfg.theme; refreshRogueDependent(cfg); }
+  }
+  if (taskId === 'reclamation' && cfg.theme) {
+    var ct = document.getElementById('rc-theme');
+    if (ct) { ct.value = cfg.theme; refreshReclDependent(cfg.mode); }
+  }
+  Object.keys(OPT_IDS).forEach(function (domId) {
+    var opt = OPT_IDS[domId];
+    var el = document.getElementById(domId);
+    if (!el || !(opt in cfg)) return;
+    var v = cfg[opt];
+    if (el.type === 'checkbox') {
+      if (opt === 'confirm') { el.checked = Array.isArray(v) && v.indexOf(Number((el.id.match(/-(\d)$/) || [])[1])) >= 0; return; }
+      el.checked = !!v;
+    } else if (el.tagName === 'SELECT') {
+      el.value = String(v);
+    } else {
+      el.value = v;
+    }
+  });
+  // 菲亚梅塔
+  if (taskId === 'infrast' && Array.isArray(cfg.fiammetta_targets)) {
+    cfg.fiammetta_targets.forEach(function (name, i) {
+      var s = document.getElementById('i-felyne-' + (i + 1));
+      if (s) s.value = name;
+    });
+  }
+  // 换主题
+  if (taskId === 'switchtheme' && Array.isArray(cfg.themes) && cfg.themes.length) {
+    switchThemes = cfg.themes.slice();
+  }
+  // 队列级
+  var post = document.getElementById('q-post');
+  if (post && TASK_CFG._meta && TASK_CFG._meta.postAction) post.value = TASK_CFG._meta.postAction;
+}
+
+/* 「任何改动 → 防抖保存」
+ * 用文档级 **捕获** 监听：不依赖事件冒泡（change 事件在部分情况下不冒泡），
+ * 且页面重渲染后依然有效。 */
+var AUTOSAVE_BOUND = false;
+function bindAutoSave() {
+  if (AUTOSAVE_BOUND) return;
+  AUTOSAVE_BOUND = true;
+  document.addEventListener('change', function (ev) {
+    var t = ev.target;
+    if (!t || !t.closest) return;
+    if (!t.closest('#task-config, .mdw-config-global, .mdw-queue-foot')) return;
+    scheduleSave();
+  }, true);
+  document.addEventListener('input', function (ev) {
+    var t = ev.target;
+    if (!t || !t.closest) return;
+    if (!t.closest('#task-config, .mdw-config-global')) return;
+    if (t.type === 'text' || t.type === 'number' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') scheduleSave();
+  }, true);
+}
+/* 任务实例 id → 基础类型 id（队列里可存在同类型多实例） */
+function baseTaskId(id) {
+  return String(id || '').replace(/_\d+$/, '');
+}
+
+function deviceStatusText(short) {
+  if (BACKEND.online === false) return '离线预览 · 未连接后端';
+  if (!RT.address) return short ? '未配置设备 · 空闲' : '未配置设备 · 请到「设置 → 连接设置」填写 ADB 地址';
+  var bus = isRunning() ? (RT.detail || '运行中') : '空闲 · 等待执行';
+  return RT.address + ' · MAA ' + (RT.maaVersion || '—') + ' · ' + bus;
 }
 
 function updateDeviceChip() {
   var chip = document.querySelector('.mdw-chip');
   var btn = document.getElementById('btn-connect');
+  var ok = !!RT.connected;
+  var configured = !!RT.address;
   if (chip) {
-    chip.classList.toggle('ok', DEVICE.connected);
-    chip.innerHTML = '<span class="mdw-dot"></span>' + (DEVICE.connected ? '已连接 ' + DEVICE.address : '设备未连接');
+    chip.classList.toggle('ok', ok);
+    chip.innerHTML = '<span class="mdw-dot"></span>' +
+      (ok ? '已连接 ' + esc(RT.address) : (configured ? '未连接 ' + esc(RT.address) : '设备未配置'));
   }
-  if (btn) btn.textContent = DEVICE.connected ? '断开' : '连接';
+  if (btn) {
+    btn.textContent = ok ? '断开' : '连接';
+    btn.disabled = false;
+  }
 }
 
 function bindConnectButton() {
   var btn = document.getElementById('btn-connect');
   if (!btn) return;
   btn.addEventListener('click', function () {
-    DEVICE.connected = !DEVICE.connected;
-    updateDeviceChip();
-    // 状态行即时联动（任务页）
-    var line = document.querySelector('.mdw-config-status');
-    if (line) line.textContent = deviceStatusText();
+    if (BACKEND.online === false) { openInfoModal('无法连接', '后端未连接：当前是离线预览模式。'); return; }
+    if (RT.connected) {
+      POST('/api/runner/stop').then(function () { return refreshRunnerStatus(); })
+        .catch(function (e) { openInfoModal('停止失败', e.message); });
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = '连接中…';
+    POST('/api/runner/test-connect').then(function (r) {
+      return refreshRunnerStatus().then(function () {
+        var ok = r && (r.ok || r.connected || r.success);
+        if (ok === false) openInfoModal('连接测试', (r && r.detail) || '连接失败，请检查 ADB 地址与网络。');
+        else if (r && r.detail) openInfoModal('连接测试', r.detail);
+      });
+    }).catch(function (e) {
+      openInfoModal('连接失败', e.message);
+    }).then(function () {
+      btn.disabled = false;
+      refreshRunnerStatus();
+    });
   });
 }
 
@@ -510,7 +860,7 @@ var CONFIG_RENDERERS = {
   depot: configDepot,
 };
 
-/* ===== Log Data (mock) ===== */
+/* ===== 旧 mock 日志（仅离线预览时的兜底样式参考，不再渲染） ===== */
 var LOGS = [
   { t: '14:32:15', msg: 'AsstLoadResource 完成', src: 'MaaCore', level: 'info' },
   { t: '14:32:18', msg: 'AsstAsyncConnect 192.168.31.190:5555 成功 (238ms)', src: 'runner', level: 'info' },
@@ -700,67 +1050,122 @@ function pageHome(el) {
     '<div class="mdw-home-grid">' +
       '<div class="mdw-home-card">' +
         '<div class="mdw-home-card-label">MAA Core 版本</div>' +
-        '<div class="mdw-home-card-value">v6.17.5</div>' +
-        '<button type="button" class="app-btn mdw-btn-primary mdw-home-card-btn">检查更新</button>' +
+        '<div class="mdw-home-card-value" id="home-maa-version">—</div>' +
+        '<button type="button" class="app-btn mdw-btn-primary mdw-home-card-btn" id="home-runtime-fetch">检查更新</button>' +
       '</div>' +
       '<div class="mdw-home-card">' +
         '<div class="mdw-home-card-label">资源版本</div>' +
-        '<div class="mdw-home-card-value">月行水上 #0914</div>' +
-        '<button type="button" class="app-btn mdw-btn-primary mdw-home-card-btn">检查更新</button>' +
+        '<div class="mdw-home-card-value" id="home-res-version">—</div>' +
+        '<button type="button" class="app-btn mdw-btn-primary mdw-home-card-btn" id="home-res-verify">校验资源</button>' +
       '</div>' +
       '<div class="mdw-home-card">' +
         '<div class="mdw-home-card-label">MAA For NAS</div>' +
-        '<div class="mdw-home-card-value">0.5.0</div>' +
-        '<button type="button" class="app-btn mdw-btn-primary mdw-home-card-btn">检查更新</button>' +
+        '<div class="mdw-home-card-value" id="home-service-version">—</div>' +
+        '<button type="button" class="app-btn mdw-btn-primary mdw-home-card-btn" id="home-reload">刷新</button>' +
       '</div>' +
       '<div class="mdw-home-card mdw-home-nas">' +
         '<div class="mdw-home-card-label">NAS 运行情况</div>' +
         '<div class="mdw-nas-metrics">' +
-          '<div class="mdw-nas-metric"><div class="mdw-nas-m-label">CPU 占用</div><div class="mdw-nas-m-value">23%</div><div class="mdw-nas-m-bar"><div style="width:23%"></div></div></div>' +
-          '<div class="mdw-nas-metric"><div class="mdw-nas-m-label">内存占用</div><div class="mdw-nas-m-value">512 MB</div><div class="mdw-nas-m-bar"><div style="width:35%"></div></div></div>' +
-          '<div class="mdw-nas-metric"><div class="mdw-nas-m-label">截图间隔</div><div class="mdw-nas-m-value">800 ms</div><div class="mdw-nas-m-bar"><div style="width:55%"></div></div></div>' +
-          '<div class="mdw-nas-metric"><div class="mdw-nas-m-label">连接延迟</div><div class="mdw-nas-m-value">238 ms</div><div class="mdw-nas-m-bar"><div style="width:24%"></div></div></div>' +
-          '<div class="mdw-nas-metric"><div class="mdw-nas-m-label">任务进度</div><div class="mdw-nas-m-value">3 / 5</div><div class="mdw-nas-m-bar"><div style="width:60%"></div></div></div>' +
-          '<div class="mdw-nas-metric"><div class="mdw-nas-m-label">运行时间</div><div class="mdw-nas-m-value">01:23:45</div><div class="mdw-nas-m-bar"><div style="width:80%"></div></div></div>' +
+          '<div class="mdw-nas-metric"><div class="mdw-nas-m-label">内存占用</div><div class="mdw-nas-m-value" id="nas-mem">—</div><div class="mdw-nas-m-bar"><div id="nas-mem-bar" style="width:0%"></div></div></div>' +
+          '<div class="mdw-nas-metric"><div class="mdw-nas-m-label">CPU 核心</div><div class="mdw-nas-m-value" id="nas-cpus">—</div><div class="mdw-nas-m-bar"><div style="width:0%"></div></div></div>' +
+          '<div class="mdw-nas-metric"><div class="mdw-nas-m-label">架构</div><div class="mdw-nas-m-value" id="nas-arch">—</div><div class="mdw-nas-m-bar"><div style="width:0%"></div></div></div>' +
+          '<div class="mdw-nas-metric"><div class="mdw-nas-m-label">主机名</div><div class="mdw-nas-m-value" id="nas-host">—</div><div class="mdw-nas-m-bar"><div style="width:0%"></div></div></div>' +
+          '<div class="mdw-nas-metric"><div class="mdw-nas-m-label">服务运行时间</div><div class="mdw-nas-m-value" id="nas-uptime">—</div><div class="mdw-nas-m-bar"><div style="width:0%"></div></div></div>' +
+          '<div class="mdw-nas-metric"><div class="mdw-nas-m-label">当前阶段</div><div class="mdw-nas-m-value" id="nas-phase">—</div><div class="mdw-nas-m-bar"><div style="width:0%"></div></div></div>' +
         '</div>' +
       '</div>' +
       '<div class="mdw-home-card">' +
         '<div class="mdw-home-card-label">下次定时任务</div>' +
-        '<div class="mdw-home-card-value mdw-home-accent">09:00</div>' +
-        '<div class="mdw-home-card-sub">23 分钟后</div>' +
+        '<div class="mdw-home-card-value mdw-home-accent" id="home-next-sched">—</div>' +
+        '<div class="mdw-home-card-sub" id="home-next-sched-sub">来自服务端日程</div>' +
       '</div>' +
       '<div class="mdw-home-card">' +
         '<div class="mdw-home-card-label">当前任务</div>' +
-        '<div class="mdw-home-card-value mdw-home-idle">' + (RUNNING ? '任务执行中…' : '牛牛还没开始任务哦') + '</div>' +
+        '<div class="mdw-home-card-value mdw-home-idle">' + (isRunning() ? (PHASE_TEXT[RT.phase] || '执行中') + (RT.detail ? ' · ' + esc(RT.detail) : '') : '牛牛还没开始任务哦') + '</div>' +
       '</div>' +
     '</div>';
 
   bindHomeActions(el);
+  loadHomeData();
+}
+
+function fmtBytes(n) {
+  if (!n || n < 0) return '—';
+  var gb = n / (1024 * 1024 * 1024);
+  return (gb >= 1 ? gb.toFixed(1) + ' GB' : (n / (1024 * 1024)).toFixed(0) + ' MB');
+}
+function fmtUptime(sec) {
+  if (sec == null) return '—';
+  var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+  return (h > 0 ? h + ' 小时 ' : '') + m + ' 分';
+}
+function setText(id, v) { var e = document.getElementById(id); if (e) e.textContent = v == null ? '—' : v; }
+
+function loadHomeData() {
+  GET('/api/system/info').then(function (i) {
+    markOnline(true);
+    setText('nas-mem', fmtBytes(i.totalMemoryBytes - i.freeMemoryBytes) + ' / ' + fmtBytes(i.totalMemoryBytes));
+    var pct = i.totalMemoryBytes ? Math.round((1 - i.freeMemoryBytes / i.totalMemoryBytes) * 100) : 0;
+    var bar = document.getElementById('nas-mem-bar');
+    if (bar) bar.style.width = pct + '%';
+    setText('nas-cpus', (i.cpus || '—') + ' 核');
+    setText('nas-arch', i.architecture || '—');
+    setText('nas-host', i.hostname || '—');
+    setText('nas-uptime', fmtUptime(i.uptimeSeconds));
+    setServiceVersion(i);
+    setText('home-maa-version', i.maaVersion || '—');
+    setText('home-service-version', 'v' + (i.serviceVersion || '—'));
+  }).catch(function () {});
+  GET('/api/runtime/status').then(function (r) {
+    setText('home-res-version', r.ready ? (r.maaVersion || '已就绪') : (r.phase || '未就绪'));
+    setText('home-maa-version', r.maaVersion || document.getElementById('home-maa-version').textContent);
+  }).catch(function () {});
+  GET('/api/resources/info').then(function (r) {
+    var n = (r && r.count) || (r && r.entries && r.entries.length) || (r && r.ok != null ? '' : '');
+    setText('home-res-version', (n ? n + ' 项资源' : (r && r.version) || '已就绪'));
+  }).catch(function () {});
+  loadSchedule().then(function () {
+    var next = SCHEDULES.filter(function (s) { return s.enabled; }).sort(function (a, b) { return a.time < b.time ? -1 : 1; })[0];
+    setText('home-next-sched', next ? next.time : '未设置');
+    setText('home-next-sched-sub', next ? taskNamesOf(next.tasks) : '到「日程」页添加');
+  });
+  setText('nas-phase', PHASE_TEXT[RT.phase] || RT.phase);
 }
 
 function bindHomeActions(el) {
-  function sync() {
-    var st = el.querySelector('#home-state');
-    var conn = el.querySelector('#home-connect');
-    var run = el.querySelector('#home-run');
-    if (st) st.textContent = (DEVICE.connected ? '已连接 ' + DEVICE.address : '未连接') + ' · ' + (RUNNING ? '运行中' : '空闲');
-    if (conn) conn.textContent = DEVICE.connected ? '断开' : '连接设备';
-    if (run) run.textContent = RUNNING ? '运行中…' : '开始一键长草';
-  }
-  var conn = el.querySelector('#home-connect');
-  if (conn) conn.addEventListener('click', function () { DEVICE.connected = !DEVICE.connected; updateDeviceChip(); sync(); });
-  var run = el.querySelector('#home-run');
-  if (run) run.addEventListener('click', function () {
-    if (!DEVICE.connected) { openInfoModal('无法开始', '请先连接设备'); return; }
-    if (RUNNING) { openInfoModal('无法开始', '任务已在运行中'); return; }
-    location.hash = '#/tasks';
+  function sync() { syncRuntimeUI(); }
+  var rf = el.querySelector('#home-runtime-fetch');
+  if (rf) rf.addEventListener('click', function () {
+    if (BACKEND.online === false) { openInfoModal('无法操作', '后端未连接（离线预览）。'); return; }
+    rf.disabled = true;
+    POST('/api/runtime/fetch').then(function (r) {
+      openInfoModal('运行包下载', '已开始下载 MAA ' + ((r && r.maaVersion) || '') + '，进度见日志页。');
+    }).catch(function (e) { openInfoModal('下载失败', e.message); })
+      .then(function () { rf.disabled = false; });
   });
+  var rv = el.querySelector('#home-res-verify');
+  if (rv) rv.addEventListener('click', function () {
+    rv.disabled = true;
+    POST('/api/resources/verify').then(function (r) {
+      openInfoModal('资源校验', JSON.stringify(r, null, 2).slice(0, 600));
+    }).catch(function (e) { openInfoModal('校验失败', e.message); })
+      .then(function () { rv.disabled = false; });
+  });
+  var rl = el.querySelector('#home-reload');
+  if (rl) rl.addEventListener('click', function () { loadHomeData(); refreshRunnerStatus(); });
+  var conn = el.querySelector('#home-connect');
+  if (conn) conn.addEventListener('click', function () {
+    var btn = document.getElementById('btn-connect');
+    if (btn) btn.click();
+  });
+  var run = el.querySelector('#home-run');
+  if (run) run.addEventListener('click', function () { location.hash = '#/tasks'; });
   var stop = el.querySelector('#home-stop');
   if (stop) stop.addEventListener('click', function () {
-    if (!RUNNING) { openInfoModal('无法停止', '当前没有正在执行的任务'); return; }
-    location.hash = '#/tasks';
+    if (BACKEND.online === false) { openInfoModal('无法停止', '后端未连接（离线预览）。'); return; }
+    POST('/api/runner/stop').then(refreshRunnerStatus).catch(function (e) { openInfoModal('停止失败', e.message); });
   });
-  sync();
+  syncRuntimeUI();
 }
 
 /* ===== Page: Tasks (one-click weed) ===== */
@@ -804,6 +1209,8 @@ function pageTasks(el) {
     '</div>';
 
   bindTaskEvents(el);
+  applyTaskConfig(el);
+  bindAutoSave(el, { queue: true });
 }
 
 function renderTaskList() {
@@ -857,6 +1264,8 @@ function bindTaskEvents(el) {
     }
     el.querySelector('#task-config').innerHTML = renderTaskConfig();
     bindConfigEvents(el);
+    applyTaskConfig(el);
+    bindAutoSave(el);
   }
 
   // Drag-and-drop reordering via custom mouse events (more reliable than HTML5 DnD)
@@ -985,6 +1394,8 @@ function bindTaskEvents(el) {
       activeConfigTab = t.dataset.tab;
       taskConfigEl.innerHTML = renderTaskConfig();
       bindConfigEvents(el);
+    applyTaskConfig(el);
+    bindAutoSave(el);
     });
   }
 
@@ -1026,52 +1437,35 @@ function bindTaskEvents(el) {
   updateQueueCount(el);
   var startBtn = el.querySelector('#q-start');
   if (startBtn) startBtn.addEventListener('click', function () {
-    if (!RUNNING) {
-      var checked = Array.from(taskList.querySelectorAll('.mdw-qi-check:checked')).map(function (c) { return c.dataset.task; });
-      if (!checked.length) { openInfoModal('无法开始', '请先勾选要执行的任务'); return; }
-      if (!DEVICE.connected) { openInfoModal('无法开始', '设备未连接：请先点击右上角「连接」'); return; }
-      RUNNING = true;
-      startBtn.textContent = '停止';
-      startBtn.classList.add('mdw-btn-danger');
-      var tl = el.querySelector('#timeline');
-      if (tl) {
-        var nameOf = function (id) { var t = TASKS.find(function (x) { return x.id === id; }); return t ? t.name : id; };
-        var lines = [
-          { t: nowTime(), msg: 'AsstAsyncConnect ' + DEVICE.address + ' 成功', src: 'runner', level: 'info' },
-          { t: nowTime(), msg: 'AsstStart 已下发，任务队列开始执行', src: 'runner', level: 'info' }
-        ].concat(checked.map(function (id) {
-          return { t: nowTime(), msg: 'AsstAppendTask ' + nameOf(id), src: 'runner', level: 'info' };
-        }));
-        tl.insertAdjacentHTML('afterbegin', lines.reverse().map(function (e) {
-          return '<div class="mdw-tl-item lv-' + e.level + '"><span class="mdw-tl-dot"></span><div class="mdw-tl-body">' +
-            '<div class="mdw-tl-time">' + esc(e.t) + '</div><div class="mdw-tl-text">' + esc(e.msg) + '</div>' +
-            '<div class="mdw-tl-src">' + esc(e.src) + '</div></div></div>';
-        }).join(''));
-      }
-      runTimer = setInterval(function () {
-        var t = el.querySelector('#timeline');
-        if (t) t.insertAdjacentHTML('afterbegin',
-          '<div class="mdw-tl-item lv-info"><span class="mdw-tl-dot"></span><div class="mdw-tl-body">' +
-          '<div class="mdw-tl-time">' + nowTime() + '</div><div class="mdw-tl-text">任务执行中…（原型模拟心跳）</div>' +
-          '<div class="mdw-tl-src">runner</div></div></div>');
-      }, 5000);
-      var line2 = document.querySelector('.mdw-config-status');
-      if (line2) line2.textContent = deviceStatusText();
-    } else {
-      RUNNING = false;
-      if (runTimer) { clearInterval(runTimer); runTimer = null; }
-      startBtn.textContent = 'Link Start!';
-      startBtn.classList.remove('mdw-btn-danger');
-      var t2 = el.querySelector('#timeline');
-      if (t2) t2.insertAdjacentHTML('afterbegin',
-        '<div class="mdw-tl-item lv-warn"><span class="mdw-tl-dot"></span><div class="mdw-tl-body">' +
-        '<div class="mdw-tl-time">' + nowTime() + '</div><div class="mdw-tl-text">AsstStop 已下发，队列停止</div>' +
-        '<div class="mdw-tl-src">runner</div></div></div>');
-      var line3 = document.querySelector('.mdw-config-status');
-      if (line3) line3.textContent = deviceStatusText();
-    }
-  });
+    var checked = Array.from(taskList.querySelectorAll('.mdw-qi-check:checked'))
+      .map(function (c) { return baseTaskId(c.dataset.task); })
+      .filter(function (v, i, a) { return a.indexOf(v) === i; });
 
+    if (isRunning()) {
+      POST('/api/runner/stop').then(function () {
+        startBtn.textContent = '停止中…';
+        setTimeout(refreshRunnerStatus, 800);
+      }).catch(function (e) { openInfoModal('停止失败', e.message); });
+      return;
+    }
+
+    if (!checked.length) { openInfoModal('无法开始', '请先勾选要执行的任务。'); return; }
+    if (BACKEND.online === false) { openInfoModal('无法开始', '后端未连接：当前为离线预览模式。'); return; }
+    if (!RT.address) { openInfoModal('无法开始', '尚未配置设备地址，请到「设置 → 连接设置」填写 ADB 地址。'); return; }
+
+    saveTaskConfig();              // 先把当前配置写盘，runner 会读它
+    startBtn.disabled = true;
+    startBtn.textContent = '下发中…';
+    POST('/api/tasks/execute', { tasks: checked }).then(function (r) {
+      if (r && r.error) throw new Error(r.error);
+      refreshRunnerStatus();
+    }).catch(function (e) {
+      openInfoModal('无法开始', e.message);
+    }).then(function () {
+      startBtn.disabled = false;
+      refreshRunnerStatus();
+    });
+  });
   bindConfigEvents(el);
 }
 
@@ -1141,103 +1535,166 @@ function bindConfigEvents(el) {
 
   var rcTheme = el.querySelector('#rc-theme');
   if (rcTheme) {
-    var rcModeArea = el.querySelector('#rc-mode-area');
-    var rcTip = el.querySelector('#rc-tip');
-    function updateRcMode() {
-      var theme = rcTheme.value;
-      var modes = MAA_DATA.reclamation.modes[theme] || [];
-      if (theme === 'Fire') {
-        if (rcModeArea) rcModeArea.innerHTML = '';
-      } else if (rcModeArea) {
-        rcModeArea.innerHTML = '<div class="mdw-row-label">模式</div>' + selectHtml(modes, modes[0][0], 'rc-mode');
-      }
-      var modeVal = modes[0] ? modes[0][0] : '';
-      if (rcTip) rcTip.textContent = reclTipText(theme, modeVal);
-      var modeSel = el.querySelector('#rc-mode');
-      if (modeSel) modeSel.addEventListener('change', function () {
-        if (rcTip) rcTip.textContent = reclTipText(theme, modeSel.value);
-      });
-    }
-    updateRcMode();
-    rcTheme.addEventListener('change', updateRcMode);
+    refreshReclDependent();
+    rcTheme.addEventListener('change', function () { refreshReclDependent(); });
   }
   // 肉鸽：主题联动 难度/分队/职业组
   var rgTheme = el.querySelector('#rg-theme');
-  if (rgTheme) {
-    function updateRgTheme() {
-      var th = rgTheme.value;
-      var diff = el.querySelector('#rg-difficulty');
-      var squad = el.querySelector('#rg-squad');
-      var cls = el.querySelector('#rg-class');
-      if (diff) {
-        var d = rogueDifficultyList(th);
-        diff.innerHTML = d.map(function (c) { return '<option value="' + esc(c[0]) + '">' + esc(c[1]) + '</option>'; }).join('');
-        diff.value = '-1';
-      }
-      if (squad) {
-        var sq = rogueSquadList(th);
-        squad.innerHTML = sq.map(function (s) { return '<option value="' + esc(s) + '">' + esc(s) + '</option>'; }).join('');
-        squad.value = MAA_DATA.roguelike.defaultSquad;
-      }
-      if (cls) {
-        var rl = rogueRoleList(th);
-        cls.innerHTML = rl.map(function (s) { return '<option value="' + esc(s) + '">' + esc(s) + '</option>'; }).join('');
-        cls.value = MAA_DATA.roguelike.roles.defaultValue;
-      }
-      var core = el.querySelector('#rg-operator');
-      if (core) {
-        var cc = rogueCoreCharList(th);
-        core.innerHTML = '<option value="">不选择</option>' +
-          cc.map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('');
-        core.value = '';
-      }
+  if (rgTheme) rgTheme.addEventListener('change', function () { refreshRogueDependent(); });
+}
+
+/* 生息演算：按当前主题重建模式下拉与提示文案 */
+function refreshReclDependent(keepMode) {
+  var themeEl = document.getElementById('rc-theme');
+  if (!themeEl) return;
+  var theme = themeEl.value;
+  var modes = MAA_DATA.reclamation.modes[theme] || [];
+  var area = document.getElementById('rc-mode-area');
+  var tip = document.getElementById('rc-tip');
+  if (area && theme !== 'Fire') {
+    area.innerHTML = '<div class="mdw-row-label">模式</div>' + selectHtml(modes, modes[0][0], 'rc-mode');
+    var sel = document.getElementById('rc-mode');
+    if (sel) {
+      if (keepMode && modes.some(function (m) { return m[0] === keepMode; })) sel.value = keepMode;
+      if (tip) tip.textContent = reclTipText(theme, sel.value);
+      sel.addEventListener('change', function () { if (tip) tip.textContent = reclTipText(theme, sel.value); });
     }
-    rgTheme.addEventListener('change', updateRgTheme);
+  } else if (area) {
+    area.innerHTML = '';
+  }
+  if (tip) tip.textContent = reclTipText(theme, keepMode || (modes[0] && modes[0][0]) || '');
+}
+
+/* 肉鸽：按当前主题重建 难度/分队/职业组/开局干员（保留仍然合法的旧值） */
+function refreshRogueDependent(keep) {
+  var themeEl = document.getElementById('rg-theme');
+  if (!themeEl) return;
+  var th = themeEl.value;
+  var d = rogueDifficultyList(th);
+  var diff = document.getElementById('rg-difficulty');
+  if (diff) {
+    var keepDiff = keep && keep.difficulty ? String(keep.difficulty) : diff.value;
+    diff.innerHTML = d.map(function (c) { return '<option value="' + esc(c[0]) + '">' + esc(c[1]) + '</option>'; }).join('');
+    diff.value = d.some(function (c) { return c[0] === keepDiff; }) ? keepDiff : '-1';
+  }
+  var squad = document.getElementById('rg-squad');
+  if (squad) {
+    var sq = rogueSquadList(th);
+    var keepSquad = keep && keep.squad ? keep.squad : squad.value;
+    squad.innerHTML = sq.map(function (x) { return '<option value="' + esc(x) + '">' + esc(x) + '</option>'; }).join('');
+    squad.value = sq.indexOf(keepSquad) >= 0 ? keepSquad : MAA_DATA.roguelike.defaultSquad;
+  }
+  var cls = document.getElementById('rg-class');
+  if (cls) {
+    var rl = rogueRoleList(th);
+    var keepRole = keep && keep.roles ? keep.roles : cls.value;
+    cls.innerHTML = rl.map(function (x) { return '<option value="' + esc(x) + '">' + esc(x) + '</option>'; }).join('');
+    cls.value = rl.indexOf(keepRole) >= 0 ? keepRole : MAA_DATA.roguelike.roles.defaultValue;
+  }
+  var core = document.getElementById('rg-operator');
+  if (core) {
+    var cc = rogueCoreCharList(th);
+    var keepCore = keep && keep.core_char ? keep.core_char : core.value;
+    core.innerHTML = '<option value="">不选择</option>' +
+      cc.map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('');
+    core.value = cc.indexOf(keepCore) >= 0 ? keepCore : '';
   }
 }
 
-/* ===== Page: Schedule (定时执行) ===== */
-var SCHEDULES = [
-  { id: 1, enabled: true, time: '04:00', repeat: 'daily', tasks: '开始唤醒 + 理智作战 + 领取奖励' },
-  { id: 2, enabled: false, time: '12:30', repeat: 'weekdays', tasks: '信用收支 + 自动公招' },
-  { id: 3, enabled: true, time: '23:00', repeat: 'daily', tasks: '基建换班' }
-];
+/* ===== Page: Schedule（GET/PUT /api/tasks/schedule） =====
+ * 服务端只存 {id, time, enabled, tasks:[任务id]}；repeat 是纯前端字段，
+ * 存在 localStorage（服务端调度器尚未实现，见文档）。 */
+var SCHEDULES = [];
+var SCHED_REPEAT = {};      // id -> repeat
 var REPEATS = [['daily', '每天'], ['weekdays', '工作日'], ['weekends', '周末'], ['mon', '每周一'], ['tue', '每周二'], ['wed', '每周三'], ['thu', '每周四'], ['fri', '每周五'], ['sat', '每周六'], ['sun', '每周日']];
+var schedSaveTimer = null;
+
+function schedRepeatOf(id) {
+  if (SCHED_REPEAT[id]) return SCHED_REPEAT[id];
+  try {
+    var all = JSON.parse(localStorage.getItem('mdw-sched-repeat') || '{}');
+    return all[id] || 'daily';
+  } catch (e) { return 'daily'; }
+}
+function setSchedRepeat(id, v) {
+  SCHED_REPEAT[id] = v;
+  try {
+    var all = JSON.parse(localStorage.getItem('mdw-sched-repeat') || '{}');
+    all[id] = v;
+    localStorage.setItem('mdw-sched-repeat', JSON.stringify(all));
+  } catch (e) { /* ignore */ }
+}
 
 function nextRunText(repeat, time) {
-  // 原型：只做文字示意，正式版由服务端调度器给出
   if (repeat === 'daily') return '明天 ' + time;
   if (repeat === 'weekdays') return '下个工作日 ' + time;
   if (repeat === 'weekends') return '下个周末 ' + time;
   return '下周 ' + time;
 }
 
+function taskNamesOf(ids) {
+  if (!ids || !ids.length) return '（未选择任务）';
+  var map = {};
+  (CATALOG ? CATALOG.tasks : []).forEach(function (t) { map[t.id] = t.name; });
+  TASK_TYPES.forEach(function (t) { if (!map[t[0]]) map[t[0]] = t[1]; });
+  return ids.map(function (i) { return map[i] || i; }).join(' + ');
+}
+
+function loadSchedule() {
+  return GET('/api/tasks/schedule').then(function (r) {
+    markOnline(true);
+    SCHEDULES = (r.schedule || []).map(function (e) {
+      return { id: String(e.id), time: e.time, enabled: e.enabled !== false, tasks: e.tasks || [] };
+    });
+    return SCHEDULES;
+  }).catch(function (e) { markOnline(false, e); return SCHEDULES; });
+}
+
+function saveSchedule() {
+  if (BACKEND.online === false) return;
+  clearTimeout(schedSaveTimer);
+  schedSaveTimer = setTimeout(function () {
+    PUT('/api/tasks/schedule', {
+      schedule: SCHEDULES.map(function (s) {
+        return { id: s.id, time: s.time, enabled: s.enabled, tasks: s.tasks };
+      }),
+    }).catch(function (e) { markOnline(false, e); });
+  }, 400);
+}
+
 function pageSchedule(el) {
   el.innerHTML =
     '<h2 class="mdw-h1">日程</h2>' +
-    '<div class="mdw-settings-group" style="max-width:760px">' +
+    '<div class="mdw-settings-group" style="max-width:860px">' +
       '<div class="mdw-settings-group-head">定时任务</div>' +
       '<div id="sched-list">' + renderScheduleList() + '</div>' +
       '<div class="mdw-sched-actions">' +
         '<button type="button" class="app-btn" id="sched-add">+ 添加定时任务</button>' +
-        '<span class="mdw-muted">原型阶段：调度由服务端执行，此处仅管理计划。</span>' +
+        '<button type="button" class="app-btn" id="sched-refresh">刷新</button>' +
+        '<span class="mdw-muted">计划保存在服务端（schedule.json）。注意：服务端定时调度器尚未实现，目前只保存计划不触发执行。</span>' +
       '</div>' +
     '</div>';
   bindScheduleEvents(el);
+  loadSchedule().then(function () {
+    var list = el.querySelector('#sched-list');
+    if (list) list.innerHTML = renderScheduleList();
+    bindScheduleEvents(el);
+  });
 }
 
 function renderScheduleList() {
   if (!SCHEDULES.length) return '<div class="mdw-muted" style="padding:10px 0">暂无定时任务。</div>';
   return SCHEDULES.map(function (s) {
-    return '<div class="mdw-sched-row" data-id="' + s.id + '">' +
-      '<label class="app-switch"><input type="checkbox" class="app-checkbox sched-en" data-id="' + s.id + '"' + (s.enabled ? ' checked' : '') + '/><span class="app-switch-view"></span></label>' +
-      '<input type="time" class="app-input-text mdw-sched-time sched-time" data-id="' + s.id + '" value="' + esc(s.time) + '"/>' +
-      '<div class="app-select-menu mdw-sched-repeat"><select class="sched-repeat" data-id="' + s.id + '">' +
-        REPEATS.map(function (r) { return '<option value="' + r[0] + '"' + (r[0] === s.repeat ? ' selected' : '') + '>' + r[1] + '</option>'; }).join('') +
+    var rep = schedRepeatOf(s.id);
+    return '<div class="mdw-sched-row" data-id="' + esc(s.id) + '">' +
+      '<label class="app-switch"><input type="checkbox" class="app-checkbox sched-en" data-id="' + esc(s.id) + '"' + (s.enabled ? ' checked' : '') + '/><span class="app-switch-view"></span></label>' +
+      '<input type="time" class="app-input-text mdw-sched-time sched-time" data-id="' + esc(s.id) + '" value="' + esc(s.time) + '"/>' +
+      '<div class="app-select-menu mdw-sched-repeat"><select class="sched-repeat" data-id="' + esc(s.id) + '">' +
+        REPEATS.map(function (r) { return '<option value="' + r[0] + '"' + (r[0] === rep ? ' selected' : '') + '>' + r[1] + '</option>'; }).join('') +
       '</select></div>' +
-      '<span class="mdw-sched-tasks">' + esc(s.tasks) + '</span>' +
-      '<span class="mdw-muted mdw-sched-next">' + (s.enabled ? nextRunText(s.repeat, s.time) : '已停用') + '</span>' +
-      '<button type="button" class="app-btn mdw-sched-del" data-id="' + s.id + '">删除</button>' +
+      '<span class="mdw-sched-tasks">' + esc(taskNamesOf(s.tasks)) + '</span>' +
+      '<span class="mdw-muted mdw-sched-next">' + (s.enabled ? nextRunText(rep, s.time) : '已停用') + '</span>' +
+      '<button type="button" class="app-btn mdw-sched-del" data-id="' + esc(s.id) + '">删除</button>' +
     '</div>';
   }).join('');
 }
@@ -1248,60 +1705,163 @@ function bindScheduleEvents(el) {
     if (list) list.innerHTML = renderScheduleList();
     bindScheduleEvents(el);
   }
+  function find(id) {
+    return SCHEDULES.filter(function (x) { return String(x.id) === String(id); })[0];
+  }
   el.querySelectorAll('.sched-en').forEach(function (c) {
     c.addEventListener('change', function () {
-      var s = SCHEDULES.find(function (x) { return x.id === +c.dataset.id; });
+      var s = find(c.dataset.id);
       if (s) s.enabled = c.checked;
+      saveSchedule();
       rerender();
     });
   });
   el.querySelectorAll('.sched-time').forEach(function (t) {
     t.addEventListener('change', function () {
-      var s = SCHEDULES.find(function (x) { return x.id === +t.dataset.id; });
-      if (s) s.time = t.value;
+      var s = find(t.dataset.id);
+      if (s) s.time = t.value || '04:00';
+      saveSchedule();
       rerender();
     });
   });
   el.querySelectorAll('.sched-repeat').forEach(function (t) {
     t.addEventListener('change', function () {
-      var s = SCHEDULES.find(function (x) { return x.id === +t.dataset.id; });
-      if (s) s.repeat = t.value;
+      setSchedRepeat(t.dataset.id, t.value);
       rerender();
     });
   });
   el.querySelectorAll('.mdw-sched-del').forEach(function (b) {
     b.addEventListener('click', function () {
-      var s = SCHEDULES.find(function (x) { return x.id === +b.dataset.id; });
+      var s = find(b.dataset.id);
       if (!s) return;
-      openConfirmModal('删除定时任务', '确定删除定时任务 ' + s.time + '（' + s.tasks + '）？', function () {
-        SCHEDULES.splice(SCHEDULES.indexOf(s), 1);
+      openConfirmModal('删除定时任务', '确定删除定时任务 ' + s.time + ' 吗？', function () {
+        SCHEDULES = SCHEDULES.filter(function (x) { return x !== s; });
+        saveSchedule();
         rerender();
       });
-      return;
-      SCHEDULES.splice(SCHEDULES.indexOf(s), 1);
-      rerender();
     });
   });
   var add = el.querySelector('#sched-add');
   if (add) add.addEventListener('click', function () {
     openScheduleAddModal(function (picked) {
-      SCHEDULES.push({ id: Date.now(), enabled: true, time: '08:00', repeat: 'daily', tasks: picked.map(function (t) { return t[1]; }).join(' + ') });
+      var entry = { id: 's' + Date.now(), enabled: true, time: '08:00', tasks: picked.map(function (t) { return t[0]; }) };
+      SCHEDULES.push(entry);
+      saveSchedule();
       rerender();
     });
   });
+  var rf = el.querySelector('#sched-refresh');
+  if (rf) rf.addEventListener('click', function () { loadSchedule().then(rerender); });
 }
 
-/* ===== Page: Logs ===== */
+/* ===== 日志（GET /api/logs 拉取 + WS /api/ws 实时推送） ===== */
 var LOG_FILTER = 'all';
-var FULL_LOGS = LOGS.concat([
-  { t: '14:33:02', msg: '基建换班 · 进入宿舍 01', src: 'MaaCore', level: 'info' },
-  { t: '14:34:11', msg: '干员 心情低于阈值，触发换班', src: 'MaaCore', level: 'warn' },
-  { t: '14:35:40', msg: 'AsstStop 已下发，队列停止', src: 'runner', level: 'info' },
-  { t: '14:36:02', msg: 'ADB 连接超时 (5000ms)，重试 1/3', src: 'runner', level: 'error' },
-  { t: '14:36:09', msg: 'ADB 连接成功', src: 'runner', level: 'info' },
-  { t: '14:37:22', msg: '识别 理智 72/130', src: 'MaaCore', level: 'debug' },
-  { t: '14:38:00', msg: '代理倍率 3 → 1（理智不足）', src: 'MaaCore', level: 'warn' }
-]);
+var LOG_MAX = 2000;
+var LOG_ENTRIES = [];      // {t, level, msg, src}
+
+function logTimeOf(e) {
+  var raw = e.t || e.time || e.timestamp;
+  if (raw && typeof raw === 'string' && raw.indexOf('T') > 0) {
+    var d = new Date(raw);
+    if (!isNaN(d.getTime())) {
+      function p(n) { return (n < 10 ? '0' : '') + n; }
+      return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+    }
+  }
+  return raw || nowTime();
+}
+
+function logEntryOf(e) {
+  return {
+    t: logTimeOf(e),
+    level: String(e.level || e.lvl || 'info').toLowerCase(),
+    msg: e.msg || e.message || '',
+    src: e.src || e.tag || e.scope || e.source || 'server',
+  };
+}
+
+function pushLogEntry(e) {
+  var entry = logEntryOf(e);
+  LOG_ENTRIES.push(entry);
+  if (LOG_ENTRIES.length > LOG_MAX) LOG_ENTRIES.splice(0, LOG_ENTRIES.length - LOG_MAX);
+  appendLogRow(entry);
+  appendTimelineRow(entry);
+}
+
+function logRowText(e) {
+  return e.t + ' [' + e.level.toUpperCase() + '] ' + e.msg + (e.src ? '  (' + e.src + ')' : '');
+}
+
+function logMatches(e) { return LOG_FILTER === 'all' || e.level === LOG_FILTER; }
+
+function appendLogRow(e) {
+  var view = document.getElementById('log-view');
+  if (!view || !logMatches(e)) return;
+  var atBottom = view.scrollTop + view.clientHeight >= view.scrollHeight - 30;
+  view.textContent += (view.textContent ? '\n' : '') + logRowText(e);
+  if (atBottom) view.scrollTop = view.scrollHeight;
+}
+
+function appendTimelineRow(e) {
+  var tl = document.getElementById('timeline');
+  if (!tl) return;
+  var lv = e.level === 'warning' ? 'warn' : e.level;
+  tl.insertAdjacentHTML('afterbegin',
+    '<div class="mdw-tl-item lv-' + esc(lv) + '">' +
+      '<span class="mdw-tl-dot"></span>' +
+      '<div class="mdw-tl-body">' +
+        '<div class="mdw-tl-time">' + esc(e.t) + '</div>' +
+        '<div class="mdw-tl-text">' + esc(e.msg) + '</div>' +
+        '<div class="mdw-tl-src">' + esc(e.src) + '</div>' +
+      '</div></div>');
+}
+
+function renderTimeline() {
+  var list = LOG_ENTRIES.slice(-40).reverse();
+  if (!list.length) return '<div class="mdw-muted" style="padding:10px">暂无日志，点「开始」后这里会实时滚动。</div>';
+  return list.map(function (e) {
+    var lv = e.level === 'warning' ? 'warn' : e.level;
+    return '<div class="mdw-tl-item lv-' + esc(lv) + '"><span class="mdw-tl-dot"></span><div class="mdw-tl-body">' +
+      '<div class="mdw-tl-time">' + esc(e.t) + '</div>' +
+      '<div class="mdw-tl-text">' + esc(e.msg) + '</div>' +
+      '<div class="mdw-tl-src">' + esc(e.src) + '</div></div></div>';
+  }).join('');
+}
+
+function loadLogs() {
+  return GET('/api/logs?limit=300').then(function (r) {
+    markOnline(true);
+    LOG_ENTRIES = (r.entries || []).map(logEntryOf);
+    var view = document.getElementById('log-view');
+    if (view) view.textContent = renderFullLogs();
+    LOG_FILES = r.files || [];
+    var tl = document.getElementById('timeline');
+    if (tl) tl.innerHTML = renderTimeline();
+    return LOG_ENTRIES;
+  }).catch(function (e) { markOnline(false, e); return LOG_ENTRIES; });
+}
+
+var LOG_FILES = [];
+
+function connectLogStream() {
+  if (typeof WebSocket === 'undefined') return;
+  var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  var url = proto + '//' + location.host + '/api/ws';
+  var ws;
+  try { ws = new WebSocket(url); } catch (e) { return; }
+  var retry = 0;
+  ws.onopen = function () { markOnline(true); retry = 0; };
+  ws.onmessage = function (ev) {
+    var data;
+    try { data = JSON.parse(ev.data); } catch (e) { return; }
+    if (data && data.level && (data.msg || data.message)) pushLogEntry(data);
+  };
+  ws.onclose = function () {
+    retry += 1;
+    setTimeout(connectLogStream, Math.min(15000, 1500 * retry));
+  };
+  ws.onerror = function () { /* onclose 负责重连 */ };
+}
 
 function pageLogs(el) {
   el.innerHTML =
@@ -1312,28 +1872,35 @@ function pageLogs(el) {
           return '<option value="' + l[0] + '"' + (l[0] === LOG_FILTER ? ' selected' : '') + '>' + l[1] + '</option>';
         }).join('') +
       '</select></div>' +
+      '<button type="button" class="app-btn" id="log-refresh">刷新</button>' +
       '<button type="button" class="app-btn" id="log-copy">复制日志</button>' +
-      '<span class="mdw-muted">共 ' + FULL_LOGS.length + ' 条（原型静态数据，正式版由 /api/logs 提供）</span>' +
+      '<a class="app-btn" id="log-download" href="/api/logs/download" download>下载日志</a>' +
+      '<span class="mdw-muted" id="log-count"></span>' +
     '</div>' +
     '<pre class="mdw-logpage" id="log-view">' + renderFullLogs() + '</pre>';
 
+  function updateCount() {
+    var c = document.getElementById('log-count');
+    if (c) c.textContent = '共 ' + LOG_ENTRIES.length + ' 条 · 实时推送中（/api/ws）';
+  }
+  updateCount();
   el.querySelector('#log-level').addEventListener('change', function () {
     LOG_FILTER = this.value;
-    el.querySelector('#log-view').innerHTML = renderFullLogs();
+    el.querySelector('#log-view').textContent = renderFullLogs();
   });
+  el.querySelector('#log-refresh').addEventListener('click', function () { loadLogs().then(updateCount); });
   el.querySelector('#log-copy').addEventListener('click', function () {
+    var text = renderFullLogs();
+    if (navigator.clipboard) navigator.clipboard.writeText(text);
     this.textContent = '已复制';
     var b = this;
     setTimeout(function () { b.textContent = '复制日志'; }, 1200);
   });
+  loadLogs().then(updateCount);
 }
 
 function renderFullLogs() {
-  return esc(FULL_LOGS.filter(function (e) {
-    return LOG_FILTER === 'all' || e.level === LOG_FILTER;
-  }).map(function (e) {
-    return e.t + ' [' + e.level.toUpperCase() + '] ' + e.msg + '  (' + e.src + ')';
-  }).join('\n'));
+  return LOG_ENTRIES.filter(logMatches).map(logRowText).join('\n');
 }
 
 /* ===== Page: Copilot ===== */
@@ -1820,7 +2387,42 @@ function applyTheme(mode) {
   try { localStorage.setItem('mdw-theme', mode); } catch (e) { }
 }
 
+function saveConnection() {
+  if (BACKEND.online === false) return;
+  var payload = {
+    address: (document.getElementById('cs-address') || {}).value || '',
+    adbPath: (document.getElementById('cs-adbPath') || {}).value || '',
+    config: (document.getElementById('cs-config') || {}).value || 'General',
+    touchMode: (document.getElementById('cs-touchMode') || {}).value || 'minitouch',
+    clientType: (document.getElementById('cs-clientType') || {}).value || 'Official',
+  };
+  CONNECTION = Object.assign(CONNECTION, payload);
+  if (payload.address) DEVICE.address = payload.address;
+  PUT('/api/connection', payload).then(function () {
+    markOnline(true);
+    refreshRunnerStatus();
+  }).catch(function (e) { markOnline(false, e); });
+}
+
 function bindSettingsEvents(el) {
+  ['cs-address', 'cs-adbPath', 'cs-config', 'cs-touchMode', 'cs-clientType'].forEach(function (id) {
+    var f = el.querySelector('#' + id);
+    if (f) { f.addEventListener('change', saveConnection); }
+  });
+  var testBtn = el.querySelector('#cs-test');
+  if (testBtn) testBtn.addEventListener('click', function () {
+    var msg = el.querySelector('#cs-msg');
+    saveConnection();
+    testBtn.disabled = true;
+    if (msg) msg.textContent = '测试中…';
+    POST('/api/runner/test-connect').then(function (r) {
+      if (msg) msg.textContent = (r && (r.detail || r.message)) || '连接成功';
+      openInfoModal('连接测试', JSON.stringify(r || {}, null, 2));
+    }).catch(function (e) {
+      if (msg) msg.textContent = '失败：' + e.message;
+    }).then(function () { testBtn.disabled = false; refreshRunnerStatus(); });
+  });
+
   var themeSel = el.querySelector('#s-theme');
   if (themeSel) themeSel.addEventListener('change', function () { applyTheme(this.value); });
   var navCol = el.querySelector('#s-navcollapse');
@@ -1835,12 +2437,13 @@ function renderSettingsBody() {
   if (settingsTab === 'connection') {
     return '<div class="mdw-settings-group">' +
       '<div class="mdw-settings-group-head">连接设置</div>' +
-      settingsRow('连接地址', '设备/模拟器的 ADB 端口', '<input type="text" class="app-input-text" value="192.168.31.190:5555" placeholder="192.168.31.190:5555"/>') +
-      settingsRow('ADB 路径', '留空使用容器内 /usr/bin/adb', '<input type="text" class="app-input-text" value="" placeholder="/usr/bin/adb"/>') +
-      settingsRow('连接配置', 'MAA Core 内置识别与截图策略', selectHtml(CONN_CONFIGS, 'General')) +
-      settingsRow('触控模式', '实例级参数', selectHtml(TOUCH_MODES, 'minitouch')) +
-      settingsRow('客户端类型', '与当前账号和资源包保持一致', selectHtml(CLIENTS, 'Official')) +
-      '<div class="mdw-settings-row"><div><div class="mdw-settings-label">连接测试</div><div class="mdw-settings-desc">加载资源并尝试连接设备</div></div><div class="mdw-settings-ctl"><button type="button" class="app-btn">测试连接</button></div></div>' +
+      settingsRow('连接地址', '设备/模拟器的 ADB 地址', '<input type="text" class="app-input-text" id="cs-address" value="' + esc(CONNECTION.address || '') + '" placeholder="192.168.31.190:5555"/>') +
+      settingsRow('ADB 路径', '留空使用容器内 /usr/bin/adb', '<input type="text" class="app-input-text" id="cs-adbPath" value="' + esc(CONNECTION.adbPath || '') + '" placeholder="/usr/bin/adb"/>') +
+      settingsRow('连接配置', 'MAA Core 内置识别与截图策略', selectHtml(CONN_CONFIGS, CONNECTION.config || 'General', 'cs-config')) +
+      settingsRow('触控模式', '实例级参数 AsstSetInstanceOption(TouchMode)', selectHtml(TOUCH_MODES, CONNECTION.touchMode || 'minitouch', 'cs-touchMode')) +
+      settingsRow('客户端类型', '与当前账号和资源包保持一致', selectHtml(CLIENTS, CONNECTION.clientType || 'Official', 'cs-clientType')) +
+      '<div class="mdw-settings-row"><div><div class="mdw-settings-label">连接测试</div><div class="mdw-settings-desc">加载资源并尝试连接设备（AsstAsyncConnect）</div></div>' +
+      '<div class="mdw-settings-ctl"><button type="button" class="app-btn mdw-btn-primary" id="cs-test">测试连接</button><span class="mdw-muted" id="cs-msg"></span></div></div>' +
     '</div>';
   }
   if (settingsTab === 'startup') {
@@ -2032,5 +2635,34 @@ function route() {
 /* ===== Connect button (titlebar) ===== */
 bindConnectButton();
 
+/* ===== 启动引导：先拉后端数据，再首渲染；之后轮询运行状态 ===== */
+function boot() {
+  return Promise.all([
+    GET('/api/version').then(function (v) {
+      markOnline(true);
+      if (v && v.maaVersion) DEVICE.maaVersion = v.maaVersion;
+      RT.maaVersion = (v && v.maaVersion) || RT.maaVersion;
+      setServiceVersion(v);
+      return v;
+    }).catch(function (e) { markOnline(false, e); return null; }),
+    GET('/api/tasks/catalog').then(function (c) { CATALOG = c; return c; }).catch(function () { return null; }),
+    GET('/api/tasks/config').then(function (c) { TASK_CFG = (c && c.config) || {}; return TASK_CFG; }).catch(function () { return {}; }),
+    refreshConnection(),
+    loadLogs(),
+  ]).then(function () {
+    // 顶栏版本号 & 离线提示
+    setServiceVersion(LAST_VERSION);
+    connectLogStream();
+    return refreshRunnerStatus();
+  }).catch(function () { /* 离线也继续渲染 */ });
+}
+
 window.addEventListener('hashchange', route);
-route();
+
+boot().then(function () {
+  route();
+  setInterval(function () {
+    if (document.hidden) return;
+    refreshRunnerStatus();
+  }, 2500);
+});
