@@ -1,16 +1,16 @@
 <!DOCTYPE html>
 <html lang="zh-CN" class="app-resize">
 <head>
-  <title>MAA for NAS</title>
   <meta charset="UTF-8"/>
-  <meta name="theme-color" content="#EEE"/>
+  <title>MAA for NAS</title>
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <!-- 本地 vendored windows-ui（与正式站同一份 dist，内网/离线可用） -->
   <link rel="stylesheet" href="./windows-ui/config/app-config.css"/>
   <link rel="stylesheet" href="./windows-ui/windows-ui.min.css"/>
   <link rel="stylesheet" href="./windows-ui/icons/winui-icons.min.css"/>
-  <link rel="stylesheet" href="./style.css?v=0.4.2"/>
+  <link rel="stylesheet" href="./style.css?v=1.5.0"/>
 </head>
-<body>
+<body data-theme="light">
   <div class="app-navbar-wrap" id="NavBarMain">
     <div class="app-navbar-topbar-mobile">
       <span class="app-navbar-toggler" data-win-toggle="navbar-left" data-win-target="#NavBarMain"></span>
@@ -23,59 +23,39 @@
       </div>
       <ul class="app-navbar-list" id="app-navbar-list">
         <label class="app-navbar-theme-switch">
-          <input id="app-navbar-theme-switch" type="checkbox" checked>
+          <input id="theme-switch" type="checkbox">
           <div class="app-navbar-theme-switch-icon"></div>
         </label>
-        <li class="app-navbar-list-item"><a href="#/tasks" class="active"><i class="icons10-tasks"></i><span>一键长草</span></a></li>
-        <li class="app-navbar-list-item"><a href="#/schedule" class="unactive"><i class="icons10-calendar"></i><span>日程</span></a></li>
-        <li class="app-navbar-list-item"><a href="#/settings" class="unactive"><i class="icons10-settings"></i><span>设置</span></a></li>
-        <li class="app-navbar-list-item"><a href="#/runtime" class="unactive"><i class="icons10-download"></i><span>Runtime</span></a></li>
-        <li class="app-navbar-list-item"><a href="#/logs" class="unactive"><i class="icons10-document"></i><span>日志</span></a></li>
-        <li class="app-navbar-list-item"><a href="#/features" class="unactive"><i class="icons10-numbered-list"></i><span>功能对照</span></a></li>
-        <li class="app-navbar-list-item"><a href="#/about" class="unactive"><i class="icons10-info"></i><span>关于</span></a></li>
+        <li class="app-navbar-list-item"><a href="#/home" class="active"><i class="icons10 icons10-home"></i><span>主页</span></a></li>
+        <li class="app-navbar-list-item"><a href="#/tasks" class="unactive"><i class="icons10 icons10-tasks"></i><span>一键长草</span></a></li>
+        <li class="app-navbar-list-item"><a href="#/copilot" class="unactive"><i class="icons10 icons10-controller"></i><span>自动战斗</span></a></li>
+        <li class="app-navbar-list-item"><a href="#/schedule" class="unactive"><i class="icons10 icons10-calendar"></i><span>日程</span></a></li>
+        <li class="app-navbar-list-item"><a href="#/tools" class="unactive"><i class="icons10 icons10-search"></i><span>小工具</span></a></li>
+        <li class="app-navbar-list-item"><a href="#/logs" class="unactive"><i class="icons10 icons10-document"></i><span>日志</span></a></li>
+        <li class="app-navbar-list-item"><a href="#/settings" class="unactive"><i class="icons10 icons10-settings"></i><span>设置</span></a></li>
       </ul>
     </nav>
   </div>
 
   <div class="mdw-col">
-    <header class="mdw-topbar">
-      <div class="mdw-topbar-l">
-        <span class="app-navbar-toggler mdw-topbar-burger" data-win-toggle="navbar-left" data-win-target="#NavBarMain" aria-label="Toggle navigation"></span>
-        <span class="mdw-brand">MAA for NAS</span>
-        <nav class="mdw-navatabs">
-          <a href="#/tasks" class="mdw-navtab active" id="navtab-tasks">一键长草</a>
-          <a href="#/copilot" class="mdw-navtab unactive" id="navtab-copilot">自动战斗</a>
-        </nav>
-        <span class="mdw-muted" id="tb-version"></span>
+    <header class="mdw-titlebar">
+      <div class="mdw-titlebar-l">
+        <span class="app-navbar-toggler mdw-titlebar-burger" data-win-toggle="navbar-left" data-win-target="#NavBarMain" aria-label="Toggle navigation"></span>
+        <span class="mdw-titlebar-title">MAA for NAS</span>
       </div>
-      <div class="mdw-topbar-r">
-        <button type="button" class="app-btn mdw-chip" id="tb-device" title="设备连接状态"><span class="mdw-dot"></span>未配置设备</button>
-        <button type="button" class="app-btn mdw-btn-primary" id="tb-connect">连接</button>
+      <div class="mdw-titlebar-r">
+        <span class="mdw-titlebar-ver">v0.5.0 · MAA v6.17.5</span>
+        <span class="mdw-chip"><span class="mdw-dot"></span>设备未连接</span>
+        <button type="button" class="app-btn mdw-btn-primary" id="btn-connect">连接</button>
       </div>
     </header>
     <div class="app-page-container has-padding" id="page">
       <h2 class="mdw-h1">加载中…</h2>
-      <p class="mdw-muted">如果此文字长时间停留，说明 JavaScript 未运行（下方会显示具体错误）。</p>
-      <noscript><p class="mdw-error">浏览器已禁用 JavaScript，本页面无法工作。</p></noscript>
     </div>
-    <footer class="mdw-statusbar">
-      <span id="sb-left"></span>
-      <span class="mdw-muted" id="sb-right"></span>
-    </footer>
   </div>
 
-  <script>
-    // Show any script error on the page itself instead of a silent blank screen.
-    window.addEventListener('error', function (e) {
-      var el = document.getElementById('page');
-      if (el) el.innerHTML += '<p class="mdw-error">脚本错误: ' + (e.message || 'unknown') + ' @ ' + (e.filename || '') + ':' + (e.lineno || '') + '</p>';
-    });
-    window.addEventListener('unhandledrejection', function (e) {
-      var el = document.getElementById('page');
-      if (el) el.innerHTML += '<p class="mdw-error">异步错误: ' + String((e.reason && e.reason.message) || e.reason) + '</p>';
-    });
-  </script>
-  <script src="./windows-ui/windows-ui.min.js?v=0.4.2"></script>
-  <script src="./app.js?v=0.4.2"></script>
+  <script src="./windows-ui/windows-ui.min.js"></script>
+  <script src="./maa-data.js?v=1.1.0"></script>
+  <script src="./app.js?v=1.5.0"></script>
 </body>
 </html>
