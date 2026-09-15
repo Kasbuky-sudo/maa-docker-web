@@ -60,6 +60,7 @@ function renderOfflineBanner() {
 var RT = {
   phase: 'idle', detail: '', connected: false, address: '',
   maaVersion: '', maaOk: false, postAction: 'None',
+  connectTest: { running: false, ok: null, detail: '', address: '', ms: null },
 };
 var RUNNING_PHASES = ['loading', 'connecting', 'running', 'stopping'];
 
@@ -128,6 +129,7 @@ function refreshRunnerStatus() {
     RT.address = (s.connection && s.connection.address) || '';
     RT.maaOk = !!(s.maa && s.maa.ok);
     RT.maaVersion = s.maaVersion || RT.maaVersion;
+    RT.connectTest = s.connectTest || RT.connectTest;
     if (RT.address) DEVICE.address = RT.address;
     updateDeviceChip();
     syncRuntimeUI();
@@ -385,6 +387,42 @@ function updateDeviceChip() {
   }
 }
 
+/* 连接测试是服务端后台任务（POST 立即返回），这里轮询 /api/runner/status 拿结果 */
+var connectWaiter = null;
+
+function startConnectTest(btn) {
+  if (BACKEND.online === false) { openInfoModal('无法连接', '后端未连接：当前是离线预览模式。'); return; }
+  var label = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '连接中…'; }
+  POST('/api/runner/test-connect').then(function (r) {
+    if (!r || !r.started) throw new Error('服务端未开始连接测试');
+    pollConnectTest(btn, label);
+  }).catch(function (e) {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+    var msg = String(e && e.message || e);
+    if (msg.indexOf('504') >= 0 || /gateway/i.test(msg)) {
+      msg = '网关超时（504）：服务端仍在连接中，请稍后查看状态栏；' +
+            '若反复出现，说明反代超时过短。';
+    }
+    openInfoModal('连接测试', msg);
+  });
+}
+
+function pollConnectTest(btn, label) {
+  clearTimeout(connectWaiter);
+  refreshRunnerStatus().then(function () {
+    var ct = RT.connectTest || {};
+    if (ct.running) {
+      connectWaiter = setTimeout(function () { pollConnectTest(btn, label); }, 1200);
+      return;
+    }
+    if (btn) { btn.disabled = false; btn.textContent = RT.connected ? '断开' : (label || '连接'); }
+    if (ct.ok === true) openInfoModal('连接测试成功', ct.detail || ('已连接 ' + (ct.address || RT.address)));
+    else if (ct.ok === false) openInfoModal('连接测试失败', ct.detail || '连接失败，请检查 ADB 地址与网络。');
+    refreshRunnerStatus();
+  });
+}
+
 function bindConnectButton() {
   var btn = document.getElementById('btn-connect');
   if (!btn) return;
@@ -395,20 +433,7 @@ function bindConnectButton() {
         .catch(function (e) { openInfoModal('停止失败', e.message); });
       return;
     }
-    btn.disabled = true;
-    btn.textContent = '连接中…';
-    POST('/api/runner/test-connect').then(function (r) {
-      return refreshRunnerStatus().then(function () {
-        var ok = r && (r.ok || r.connected || r.success);
-        if (ok === false) openInfoModal('连接测试', (r && r.detail) || '连接失败，请检查 ADB 地址与网络。');
-        else if (r && r.detail) openInfoModal('连接测试', r.detail);
-      });
-    }).catch(function (e) {
-      openInfoModal('连接失败', e.message);
-    }).then(function () {
-      btn.disabled = false;
-      refreshRunnerStatus();
-    });
+    startConnectTest(btn);
   });
 }
 
@@ -2752,14 +2777,16 @@ function bindSettingsEvents(el) {
   if (testBtn) testBtn.addEventListener('click', function () {
     var msg = el.querySelector('#cs-msg');
     saveConnection();
-    testBtn.disabled = true;
     if (msg) msg.textContent = '测试中…';
-    POST('/api/runner/test-connect').then(function (r) {
-      if (msg) msg.textContent = (r && (r.detail || r.message)) || '连接成功';
-      openInfoModal('连接测试', JSON.stringify(r || {}, null, 2));
-    }).catch(function (e) {
-      if (msg) msg.textContent = '失败：' + e.message;
-    }).then(function () { testBtn.disabled = false; refreshRunnerStatus(); });
+    startConnectTest(testBtn);
+    var t = setInterval(function () {
+      var m = document.getElementById('cs-msg');
+      if (!m) { clearInterval(t); return; }
+      if (RT.connectTest && !RT.connectTest.running) {
+        m.textContent = (RT.connectTest.ok ? '成功：' : '失败：') + (RT.connectTest.detail || '');
+        clearInterval(t);
+      }
+    }, 1200);
   });
 
   var themeSel = el.querySelector('#s-theme');

@@ -1018,3 +1018,42 @@ body {
   .mdw-check { max-width: 100%; }
   .mdw-check > span { white-space: normal; word-break: break-word; }
 }
+
+/* ==================================================================
+ * 移动端修复 v1.9.2
+ *  - 划不动：base 里的 `html, body { overflow: hidden }` 只被旧断点覆盖了 body，
+ *    根元素仍禁止滚动 → 这里连 html 一起放开
+ *  - 没有汉堡：`.mdw-titlebar-burger { display: none }` 定义在旧断点【之后】，
+ *    同优先级下后写者赢 → 必须放到文件末尾（这里）声明
+ * ================================================================== */
+@media (max-width: 760px) {
+  html, body {
+    overflow-y: auto !important;
+    overflow-x: clip !important;
+    height: auto !important;
+    min-height: 100% !important;
+  }
+  /* 汉堡按钮（官方 navbar 收起/浮层开关） */
+  .mdw-titlebar-burger {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    margin-right: 4px;
+    flex: 0 0 auto;
+    cursor: pointer;
+  }
+  .mdw-titlebar-burger::after {
+    font-family: icons10, "winui-icons";
+    font-size: 20px;
+    content: "\f105";
+  }
+  .mdw-titlebar-burger:active { background: var(--mdw-hover); }
+  /* 官方移动端顶条（本项目的顶栏已自带汉堡，避免出现两条） */
+  .app-navbar-topbar-mobile { display: none !important; }
+  /* 浮动导航：可滚、盖在内容之上 */
+  .app-navbar-wrap.collapsed-float nav.app-navbar { max-height: 100vh; overflow-y: auto; z-index: 50; }
+  .app-navbar-overlay { z-index: 45; }
+  .mdw-titlebar-l { flex: 1 1 auto; min-width: 0; }
+}

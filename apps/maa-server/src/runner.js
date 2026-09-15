@@ -25,6 +25,17 @@ let state = {
   startedAt: null,
   finishedAt: null,
 };
+
+// 连接测试：异步执行，进度通过 /api/runner/status 暴露，避免长请求被反代掐断（504）
+let connectTest = {
+  running: false,
+  ok: null,        // null=未跑过 / true / false
+  detail: '',
+  address: '',
+  ms: null,
+  startedAt: null,
+  finishedAt: null,
+};
 let session = null; // { handle, cbRef }
 let seq = 0;
 
@@ -40,6 +51,7 @@ function snapshot() {
     connection: { address: conn.address || '', config: conn.config || 'General', adbPath: conn.adbPath || '' },
     maa: maaCore.available(),
     maaVersion: safeVersion(),
+    connectTest: { ...connectTest },
   };
 }
 
@@ -334,9 +346,26 @@ function stop() {
 }
 
 // Probe an ADB device without appending tasks: load resources, connect, disconnect.
-async function testConnect() {
+/* 立即返回（{started:true}），真正的连接在后台跑，结果看 status.connectTest */
+function testConnect() {
+  if (connectTest.running) return { started: true, alreadyRunning: true, address: connectTest.address };
+  connectTest = {
+    running: true, ok: null, detail: '连接测试中', address: '', ms: null,
+    startedAt: Date.now(), finishedAt: null,
+  };
+  runConnectTest().catch((e) => {
+    connectTest = {
+      ...connectTest, running: false, ok: false, detail: e.message,
+      finishedAt: Date.now(),
+    };
+  });
+  return { started: true, address: connectTest.address };
+}
+
+async function runConnectTest() {
   if (busy()) throw Object.assign(new Error('任务执行中，无法测试连接'), { statusCode: 409 });
   const conn = readConnection();
+  connectTest.address = conn.address || '';
   if (!conn.address) throw Object.assign(new Error('尚未填写设备地址'), { statusCode: 400 });
   const dir = runtime._internal.runtimeRoot();
   if (!dir) throw Object.assign(new Error('MAA 运行包未就绪'), { statusCode: 409 });
@@ -355,12 +384,21 @@ async function testConnect() {
       if (f.connected(handle)) {
         const ms = Date.now() - started;
         logger.info('runner', `连接测试成功: ${conn.address} (${ms} ms)`);
+        connectTest = {
+          running: false, ok: true, detail: `连接成功（${ms} ms）`,
+          address: conn.address, ms, startedAt: connectTest.startedAt, finishedAt: Date.now(),
+        };
         return { ok: true, address: conn.address, ms, maaVersion: f.getVersion() };
       }
     }
     throw new Error(`连接超时（${conn.address}）`);
   } catch (e) {
     logger.warn('runner', `连接测试失败: ${e.message}`);
+    connectTest = {
+      running: false, ok: false, detail: e.message,
+      address: conn.address, ms: Date.now() - started,
+      startedAt: connectTest.startedAt, finishedAt: Date.now(),
+    };
     return { ok: false, address: conn.address, error: e.message };
   } finally {
     try { if (handle) f.destroy(handle); } catch { /* ignore */ }
@@ -368,4 +406,4 @@ async function testConnect() {
   }
 }
 
-module.exports = { snapshot, start, stop, testConnect, busy, buildParams, _resetForTest: () => { state = { phase: 'idle', detail: '', tasks: [], startedAt: null, finishedAt: null }; } };
+module.exports = { snapshot, start, stop, testConnect, connectTestState: () => ({ ...connectTest }), busy, buildParams, _resetForTest: () => { state = { phase: 'idle', detail: '', tasks: [], startedAt: null, finishedAt: null }; } };
