@@ -1,0 +1,12 @@
+* text=auto
+*.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+Dockerfile.* text eol=lf
+*.css text
+*.js text
+*.json text
+*.md text
+*.png binary
+*.woff binary
+*.woff2 binary
