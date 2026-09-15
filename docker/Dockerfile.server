@@ -3,6 +3,11 @@ FROM node:22-slim
 
 WORKDIR /app
 
+# adb is required by MaaCore's ADB control unit
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends adb \
+ && rm -rf /var/lib/apt/lists/*
+
 COPY apps/maa-server/package.json ./
 RUN npm install --omit=dev --no-fund --no-audit
 

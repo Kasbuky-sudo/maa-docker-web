@@ -164,6 +164,30 @@ function renderTaskDetail(el) {
   });
 }
 
+let runPoll = null;
+function pollRunStatus(out) {
+  clearInterval(runPoll);
+  const tick = async () => {
+    let st;
+    try { st = await api.get('/api/runner/status'); } catch { clearInterval(runPoll); return; }
+    if (st.phase === 'idle' || st.phase === 'done' || st.phase === 'error') {
+      clearInterval(runPoll);
+      const kind = st.phase === 'error' ? 'alert-bar-danger' : 'alert-bar-success';
+      if (st.phase !== 'idle') out.innerHTML = alertBar(kind, `执行结束：${st.detail || st.phase}`);
+      return;
+    }
+    out.innerHTML = `<div class="mdw-hstack">
+      <div class="app-progress-container mdw-progress-fit"><div class="app-progress-bar"><span class="indeterminate"></span></div></div>
+      <span class="mdw-muted">${esc(st.detail || st.phase)} · MAA ${esc(st.maaVersion || '')}</span>
+      <button type="button" class="app-btn" id="btn-stoprun">停止</button></div>`;
+    out.querySelector('#btn-stoprun').onclick = async () => {
+      try { await api.send('/api/runner/stop', 'POST'); } catch { /* ignore */ }
+    };
+  };
+  tick();
+  runPoll = setInterval(tick, 2500);
+}
+
 async function pageTasks(el) {
   if (!CATALOG) {
     const [catalog, saved] = await Promise.all([api.get('/api/tasks/catalog'), api.get('/api/tasks/config')]);
@@ -213,7 +237,7 @@ async function pageTasks(el) {
     out.innerHTML = `<div class="app-progress-container mdw-progress-fit"><div class="app-progress-bar"><span class="indeterminate"></span></div></div>`;
     try {
       await api.send('/api/tasks/execute', 'POST', { tasks: ids });
-      out.innerHTML = alertBar('alert-bar-success', '任务已下发');
+      pollRunStatus(out);
     } catch (e) {
       out.innerHTML = alertBar('alert-bar-danger', e.message);
     }
@@ -437,6 +461,18 @@ async function pageAbout(el) {
       <p><b>许可</b>: 本项目代码以 MIT 许可发布，详见仓库 LICENSE 与 NOTICE。</p>
     </div>`;
 }
+
+// sidebar collapse (persisted)
+(function () {
+  try {
+    if (localStorage.getItem('mdw-nav') === 'collapsed') document.body.classList.add('mdw-nav-collapsed');
+  } catch { /* private mode */ }
+  const btn = document.getElementById('mdw-navtoggle');
+  if (btn) btn.addEventListener('click', () => {
+    const collapsed = document.body.classList.toggle('mdw-nav-collapsed');
+    try { localStorage.setItem('mdw-nav', collapsed ? 'collapsed' : 'open'); } catch { /* ignore */ }
+  });
+})();
 
 // ----------------------------------------------------------- router
 const pages = {

@@ -1,20 +1,32 @@
-/* MAA Docker Web — page-specific styles on top of windows-ui */
-:root { --mdw-ok: #107c10; --mdw-bad: #d13438; --mdw-warn: #797673; }
+/* MAA Docker Web — page styles over windows-ui.
+   Rule: NO hardcoded colors. Everything uses windows-ui tokens
+   (var(--dark, X) var(--light, Y) pairs switch via [data-theme]). */
+:root {
+  --mdw-ok: var(--color-success-default);
+  --mdw-bad: var(--color-danger-default);
+  --mdw-border: var(--color-ui-border-default);
+  --mdw-panel: var(--color-card-bg-default);
+  --mdw-hover: var(--color-ui-hover-default);
+}
 
-/* ---- app shell layout: windows-ui ships components, not an app shell ---- */
-body { display: flex; min-height: 100vh; }
+/* ---- app shell: windows-ui ships components, not an app shell ---- */
+body {
+  display: flex;
+  min-height: 100vh;
+  background: var(--color-background-default);
+  color: var(--color-text-default);
+}
 
-/* sidebar: keep the navbar permanently visible on desktop */
+/* sidebar: permanently visible on desktop */
 .app-navbar-wrap {
   position: sticky;
   top: 0;
   flex: 0 0 240px;
   height: 100vh;
   overflow-y: auto;
-  border-right: 1px solid rgba(0,0,0,.08);
-  background: var(--color-background-secondary, #f3f3f3);
+  border-right: 1px solid var(--mdw-border);
+  background: var(--color-navbar-bg-default, var(--color-background-default));
 }
-[data-theme="dark"] .app-navbar-wrap { border-right-color: rgba(255,255,255,.08); }
 .app-navbar-wrap nav.app-navbar {
   position: relative;
   transform: none !important;
@@ -24,16 +36,31 @@ body { display: flex; min-height: 100vh; }
 }
 .app-navbar-topbar-mobile { display: none !important; }
 
+/* sidebar collapse (desktop) */
+body.mdw-nav-collapsed .app-navbar-wrap { display: none; }
+#mdw-navtoggle {
+  position: fixed;
+  top: 12px;
+  right: 14px;
+  z-index: 30;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  font-size: 17px;
+}
+
 /* content column */
 .app-page-container {
   flex: 1 1 auto;
   min-width: 0;
   padding-top: 20px;
+  background: transparent;
 }
 
 @media (max-width: 760px) {
-  /* small screens: fall back to windows-ui overlay behavior */
+  /* small screens: windows-ui official overlay behavior */
   body { display: block; }
+  #mdw-navtoggle { display: none; }
   .app-navbar-wrap {
     position: fixed;
     flex: none;
@@ -47,23 +74,24 @@ body { display: flex; min-height: 100vh; }
   .app-page-container { padding-top: 56px; }
 }
 
+/* ---- cards ---- */
 .mdw-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin: 16px 0; }
-.mdw-card { background: var(--WindowBackground, #f3f3f3); border: 1px solid rgba(0,0,0,.08); border-radius: 8px; padding: 14px 16px; }
-[data-theme="dark"] .mdw-card { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.08); }
+.mdw-card { background: var(--mdw-panel); border: 1px solid var(--mdw-border); border-radius: 8px; padding: 14px 16px; }
 .mdw-card h3 { margin: 0 0 6px; font-size: 13px; font-weight: 400; opacity: .75; }
 .mdw-card .mdw-value { font-size: 20px; font-weight: 400; word-break: break-all; }
-.mdw-pill { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 12px; color: #fff; background: var(--mdw-warn); }
+.mdw-pill { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 12px; color: #fff; background: var(--color-foreground-dark, #797673); }
 .mdw-pill.ok { background: var(--mdw-ok); }
 .mdw-pill.bad { background: var(--mdw-bad); }
 
-.mdw-log { font-family: Consolas, monospace; font-size: 12px; line-height: 1.55; background: rgba(0,0,0,.04); border: 1px solid rgba(0,0,0,.08); border-radius: 8px; padding: 12px; height: 55vh; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
-[data-theme="dark"] .mdw-log { background: rgba(0,0,0,.35); border-color: rgba(255,255,255,.08); }
+/* ---- logs ---- */
+.mdw-log { font-family: Consolas, monospace; font-size: 12px; line-height: 1.55; background: var(--mdw-panel); border: 1px solid var(--mdw-border); border-radius: 8px; padding: 12px; height: 55vh; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
 .mdw-log .lv-debug { opacity: .6; }
-.mdw-log .lv-warn { color: #b98900; }
+.mdw-log .lv-warn { color: var(--color-day-primary-night-grey, #b98900); }
 .mdw-log .lv-error { color: var(--mdw-bad); }
 .mdw-toolbar { display: flex; gap: 12px; align-items: center; margin: 12px 0; flex-wrap: wrap; }
 .mdw-toolbar input[type="text"], .mdw-toolbar select { min-width: 160px; }
 
+/* ---- forms & misc ---- */
 .mdw-form { max-width: 480px; }
 .mdw-form label { display: block; margin: 14px 0 4px; font-size: 13px; opacity: .8; }
 .mdw-form input[type="text"], .mdw-form select { width: 100%; }
@@ -82,13 +110,11 @@ h2.mdw-title { margin: 8px 0 4px; }
 
 /* ---- 任务页: MAA 桌面端布局 ---- */
 .mdw-task-layout { display: flex; gap: 20px; align-items: flex-start; margin-top: 10px; min-width: 0; }
-.mdw-task-list { flex: 0 0 250px; border: 1px solid rgba(0,0,0,.08); border-radius: 8px; padding: 8px; background: var(--color-card-bg-default, #fbfbfb); }
-[data-theme="dark"] .mdw-task-list { border-color: rgba(255,255,255,.08); }
-.mdw-task-list-head { font-size: 13px; opacity: .7; padding: 6px 8px 8px; border-bottom: 1px solid rgba(0,0,0,.06); margin-bottom: 6px; }
-[data-theme="dark"] .mdw-task-list-head { border-bottom-color: rgba(255,255,255,.06); }
+.mdw-task-list { flex: 0 0 250px; border: 1px solid var(--mdw-border); border-radius: 8px; padding: 8px; background: var(--mdw-panel); }
+.mdw-task-list-head { font-size: 13px; opacity: .7; padding: 6px 8px 8px; border-bottom: 1px solid var(--mdw-border); margin-bottom: 6px; }
 .mdw-task-item { display: flex; align-items: center; gap: 10px; padding: 9px 8px; border-radius: 6px; cursor: pointer; }
-.mdw-task-item:hover { background: var(--color-ui-hover-default, rgba(0,0,0,.04)); }
-.mdw-task-item.selected { background: var(--color-ui-hover-default, rgba(0,0,0,.05)); box-shadow: inset 3px 0 0 var(--color-primary-adaptive, #0078d4); }
+.mdw-task-item:hover { background: var(--mdw-hover); }
+.mdw-task-item.selected { background: var(--mdw-hover); box-shadow: inset 3px 0 0 var(--color-primary-adaptive, #0078d4); }
 .mdw-task-name-sm { font-size: 15px; }
 .mdw-savebar { padding: 8px; font-size: 12px; min-height: 18px; }
 .mdw-task-detail { flex: 1 1 auto; min-width: 0; }
@@ -103,8 +129,7 @@ h2.mdw-title { margin: 8px 0 4px; }
 .mdw-step { width: 34px; padding: 0; font-size: 17px; }
 .mdw-multi { display: flex; flex-wrap: wrap; gap: 10px 18px; }
 .mdw-check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
-.mdw-action-bar { display: flex; gap: 14px; align-items: center; margin-top: 18px; padding: 12px 0; border-top: 1px solid rgba(0,0,0,.08); flex-wrap: wrap; }
-[data-theme="dark"] .mdw-action-bar { border-top-color: rgba(255,255,255,.08); }
+.mdw-action-bar { display: flex; gap: 14px; align-items: center; margin-top: 18px; padding: 12px 0; border-top: 1px solid var(--mdw-border); flex-wrap: wrap; }
 .mdw-progress-fit { width: 260px; }
 .mdw-acc-body { padding: 12px 16px 16px; }
 /* windows-ui accordion panel has fixed 500px height when open; let it fit content */

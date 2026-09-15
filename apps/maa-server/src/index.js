@@ -8,6 +8,7 @@ const { WebSocketServer } = require('ws');
 const config = require('./config');
 const { logger, LOG_DIR } = require('./logger');
 const runtime = require('./runtime');
+const runner = require('./runner');
 
 const PORT = Number(process.env.PORT || 3000);
 const PACKAGE_VERSION = require('../package.json').version;
@@ -152,21 +153,15 @@ const routes = {
     return { config: clean };
   },
 
-  async 'POST /api/tasks/execute'() {
-    // Execution pipeline (M2) is not wired yet; validate what we can and fail honestly.
-    const file = path.join(config.CONFIG_DIR(), 'connection.json');
-    let conn = {};
-    try {
-      conn = JSON.parse(require('node:fs').readFileSync(file, 'utf8'));
-    } catch { /* empty */ }
-    if (!conn.address) {
-      throw Object.assign(new Error('尚未配置设备连接地址（连接设置页）'), { statusCode: 409 });
-    }
-    throw Object.assign(
-      new Error(`任务执行管线尚未接入（设备 ${conn.address} 已知）。M2 将通过运行包内置的 MaaCore C 接口执行。`),
-      { statusCode: 501 },
-    );
+  async 'POST /api/tasks/execute'(req) {
+    const body = await readJson(req);
+    const ids = Array.isArray(body.tasks) ? body.tasks : [];
+    return runner.start(ids);
   },
+
+  'GET /api/runner/status': () => runner.snapshot(),
+
+  'POST /api/runner/stop': () => runner.stop(),
 
   // Connection settings (connection.json, consumed by the execution pipeline)
   'GET /api/connection': () => {
@@ -184,7 +179,7 @@ const routes = {
       throw Object.assign(new Error('body must be a JSON object'), { statusCode: 400 });
     }
     const clean = {};
-    for (const key of ['address', 'addressType', 'config', 'sn', 'clientType']) {
+    for (const key of ['address', 'addressType', 'config', 'sn', 'clientType', 'adbPath']) {
       if (typeof body[key] === 'string') clean[key] = body[key].slice(0, 256);
     }
     const file = path.join(config.CONFIG_DIR(), 'connection.json');
