@@ -217,47 +217,45 @@ const routes = {
     };
   },
 
-  /* ---- 设备截图：ADB screencap，直接返回 PNG（监控 / 实时画面用） ---- */
-  'GET /api/device/screenshot': (req, url, res) => {
-    // runner.snapshot().connection 里就有 address/adbPath，不必重读文件
+  /* ---- 设备截图：ADB screencap，直接返回 PNG（监控 / 实时画面用） ----
+   * 串行执行：先 connect（容器重启后 adb server 需要重新拉起并注册设备），
+   * 再 screencap；screencap 失败时重试一轮。 */
+  async 'GET /api/device/screenshot'(req, url, res) {
     const conn = (runner.snapshot() || {}).connection || {};
     const address = conn.address;
     if (!address) {
       res.writeHead(409, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: '尚未配置设备地址' }));
-      return true;
+      return;
     }
     const adbPath = conn.adbPath || '/usr/bin/adb';
     const { spawn } = require('node:child_process');
-
-    // 容器重启后 adb server 不保留设备注册，先 connect（幂等，已连接时立即返回）
-    const connectProc = spawn(adbPath, ['connect', address], { timeout: 8000 });
-    connectProc.on('error', () => {});
-
-    const proc = spawn(adbPath, ['-s', address, 'exec-out', 'screencap', '-p'], { timeout: 15000 });
-    const chunks = [];
-    let failed = null;
-    proc.stdout.on('data', (c) => chunks.push(c));
-    proc.stderr.on('data', (c) => { failed = String(c); });
-    proc.on('error', (e) => {
-      if (!res.headersSent) {
-        res.writeHead(502, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: `adb 启动失败: ${e.message}` }));
-      }
+    const run = (args, timeout) => new Promise((resolve) => {
+      const p = spawn(adbPath, args, { timeout: timeout || 12000 });
+      const chunks = [];
+      let errOut = '';
+      p.stdout.on('data', (c) => chunks.push(c));
+      p.stderr.on('data', (c) => { errOut += String(c); });
+      p.on('error', (e) => resolve({ code: -1, buf: Buffer.concat(chunks), err: errOut || e.message }));
+      p.on('close', (code) => resolve({ code, buf: Buffer.concat(chunks), err: errOut }));
     });
-    proc.on('close', (code) => {
-      if (res.headersSent) return;
-      const buf = Buffer.concat(chunks);
-      if (code !== 0 || !buf.length) {
-        res.writeHead(502, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: `screencap 失败（exit ${code}）${failed ? ': ' + failed.slice(0, 120) : ''}` }));
-        return;
-      }
-      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
-      res.end(buf);
-    });
-    // 返回 undefined：调度器约定「结果非 undefined 就 sendJson」，
-    // 截图路由自己写响应（异步），这里绝不能返回任何值
+
+    await run(['connect', address], 8000);                 // 幂等：已连接时立即返回
+    let r = await run(['-s', address, 'exec-out', 'screencap', '-p'], 20000);
+    if (r.code !== 0 || r.buf.length < 100) {              // 再连一次并重试
+      await run(['connect', address], 8000);
+      r = await run(['-s', address, 'exec-out', 'screencap', '-p'], 20000);
+    }
+    const isPng = r.buf.length > 16 && r.buf[0] === 0x89 && r.buf[1] === 0x50;
+    if (!isPng) {
+      const why = (r.err || '').split('\n').slice(-1)[0].slice(0, 140) || `exit ${r.code}`;
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: `screencap 失败: ${why}` }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
+    res.end(r.buf);
+    // 返回 undefined：调度器约定「结果非 undefined 就 sendJson」，截图路由自己写响应
   },
 
   async 'POST /api/copilot/start'(req) {
