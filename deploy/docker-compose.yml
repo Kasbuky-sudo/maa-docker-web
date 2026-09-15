@@ -1,0 +1,33 @@
+name: maa-docker-web
+
+services:
+  maa-server:
+    image: ghcr.io/kasbuky-sudo/maa-server:${VERSION:-latest}
+    container_name: maa-server
+    restart: unless-stopped
+    volumes:
+      - ./data/config:/app/data/config
+      - ./data/logs:/app/data/logs
+      - ./data/resource:/app/data/resource
+      - ./data/runtime:/app/data/runtime
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # autoFetchRuntime: server downloads the official MAA runtime on first boot
+      AUTO_FETCH_RUNTIME: ${AUTO_FETCH_RUNTIME:-true}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  maa-web:
+    image: ghcr.io/kasbuky-sudo/maa-web:${VERSION:-latest}
+    container_name: maa-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      maa-server:
+        condition: service_healthy

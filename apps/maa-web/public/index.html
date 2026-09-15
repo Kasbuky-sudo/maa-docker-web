@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="app-resize">
+<head>
+  <title>MAA Docker Web</title>
+  <meta charset="UTF-8"/>
+  <meta name="theme-color" content="#EEE"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <link rel="stylesheet" href="./windows-ui/config/app-config.css"/>
+  <link rel="stylesheet" href="./windows-ui/windows-ui.min.css"/>
+  <link rel="stylesheet" href="./windows-ui/icons/winui-icons.min.css"/>
+  <link rel="stylesheet" href="./style.css"/>
+</head>
+<body>
+  <div class="app-navbar-wrap" id="NavBarMain">
+    <div class="app-navbar-topbar-mobile">
+      <span class="app-navbar-toggler" data-win-toggle="navbar-left" data-win-target="#NavBarMain"></span>
+      <div><span class="app-navbar-name">MAA Docker Web</span></div>
+    </div>
+    <nav class="app-navbar">
+      <div class="app-navbar-header">
+        <span class="app-navbar-toggler" data-win-toggle="navbar-left" data-win-target="#NavBarMain" aria-controls="NavBarMain" aria-label="Toggle navigation"></span>
+        <span class="app-navbar-name">MAA Docker Web</span>
+      </div>
+      <ul class="app-navbar-list" id="app-navbar-list">
+        <label class="app-navbar-theme-switch">
+          <input id="app-navbar-theme-switch" type="checkbox" checked>
+          <div class="app-navbar-theme-switch-icon"></div>
+          <span id="app-navbar-theme-switch-text">Day Mode</span>
+        </label>
+        <li class="app-navbar-list-item"><a href="#/" class="active"><i class="icons10-home"></i><span>总览</span></a></li>
+        <li class="app-navbar-list-item"><a href="#/runtime" class="unactive"><i class="icons10-cpu"></i><span>Runtime</span></a></li>
+        <li class="app-navbar-list-item"><a href="#/config" class="unactive"><i class="icons10-gear"></i><span>配置</span></a></li>
+        <li class="app-navbar-list-item"><a href="#/logs" class="unactive"><i class="icons10-document"></i><span>日志</span></a></li>
+        <li class="app-navbar-list-item"><a href="#/about" class="unactive"><i class="icons10-info"></i><span>关于</span></a></li>
+      </ul>
+    </nav>
+  </div>
+  <div class="app-page-container has-padding" id="page"></div>
+
+  <script src="./windows-ui/windows-ui.min.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>

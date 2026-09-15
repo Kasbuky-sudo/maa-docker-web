@@ -1,0 +1,40 @@
+MAA Docker Web — NOTICE and third-party notices
+================================================
+
+This project (the "MAA Docker Web" repository: management API service,
+web frontend, Docker packaging, CI) is original code distributed under
+the MIT License (see LICENSE).
+
+It is important to understand what this project is and is not:
+
+1. MAA (MaaAssistantArknights)
+   - Project: https://github.com/MaaAssistantArknights/MaaAssistantArknights
+   - License: GNU Affero General Public License v3.0 (AGPL-3.0)
+   - Relationship: This repository does NOT contain, repackage, mirror or
+     redistribute any MAA binary, library or resource file. At runtime, the
+     maa-server service downloads the official MAA Linux release archive
+     directly from the official GitHub Releases endpoint, verifies its
+     SHA-256 checksum, and extracts it into a data volume owned by the user.
+     Any use of the MAA software downloaded this way is governed solely by
+     MAA's own AGPL-3.0 license and terms.
+   - Pinned version at the time of this release: MAA v6.17.5
+     (checksums are recorded in apps/maa-server/src/runtime.js)
+
+2. windows-ui (windows-ui-fabric)
+   - Project: https://github.com/virtualvivek/windows-ui
+   - License: MIT
+   - Relationship: The static frontend vendors the windows-ui v4.0.2
+     distribution files (CSS/JS/icons) under
+     apps/maa-web/public/windows-ui/. MIT license applies to those files;
+     copyright (c) virtualvivek.
+
+3. Node.js runtime and npm packages
+   - maa-server runs on Node.js (>= 20) and depends on the `ws` package
+     (MIT License, copyright (c) Einar Otto Stangvik).
+
+4. Docker base images
+   - maa-server image: node:22-slim (Node.js, MIT-style license)
+   - maa-web image: nginx:1.27-alpine (2-clause BSD)
+
+If you fork or redistribute this project together with downloaded MAA
+runtime files, you must comply with AGPL-3.0 with respect to MAA itself.

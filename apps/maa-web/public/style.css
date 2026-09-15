@@ -1,0 +1,29 @@
+/* MAA Docker Web — page-specific styles on top of windows-ui */
+:root { --mdw-ok: #107c10; --mdw-bad: #d13438; --mdw-warn: #797673; }
+
+.mdw-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin: 16px 0; }
+.mdw-card { background: var(--WindowBackground, #f3f3f3); border: 1px solid rgba(0,0,0,.08); border-radius: 8px; padding: 14px 16px; }
+[data-theme="dark"] .mdw-card { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.08); }
+.mdw-card h3 { margin: 0 0 6px; font-size: 13px; font-weight: 400; opacity: .75; }
+.mdw-card .mdw-value { font-size: 20px; font-weight: 400; word-break: break-all; }
+.mdw-pill { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: 12px; color: #fff; background: var(--mdw-warn); }
+.mdw-pill.ok { background: var(--mdw-ok); }
+.mdw-pill.bad { background: var(--mdw-bad); }
+
+.mdw-log { font-family: Consolas, monospace; font-size: 12px; line-height: 1.55; background: rgba(0,0,0,.04); border: 1px solid rgba(0,0,0,.08); border-radius: 8px; padding: 12px; height: 55vh; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+[data-theme="dark"] .mdw-log { background: rgba(0,0,0,.35); border-color: rgba(255,255,255,.08); }
+.mdw-log .lv-debug { opacity: .6; }
+.mdw-log .lv-warn { color: #b98900; }
+.mdw-log .lv-error { color: var(--mdw-bad); }
+.mdw-toolbar { display: flex; gap: 12px; align-items: center; margin: 12px 0; flex-wrap: wrap; }
+.mdw-toolbar input[type="text"], .mdw-toolbar select { min-width: 160px; }
+
+.mdw-form { max-width: 480px; }
+.mdw-form label { display: block; margin: 14px 0 4px; font-size: 13px; opacity: .8; }
+.mdw-form input[type="text"], .mdw-form select { width: 100%; }
+.mdw-actions { display: flex; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+.mdw-error { color: var(--mdw-bad); font-size: 13px; margin-top: 8px; min-height: 18px; }
+.mdw-muted { opacity: .65; font-size: 12px; }
+.mdw-list { font-size: 13px; line-height: 1.8; }
+.mdw-list b { font-weight: 500; }
+h2.mdw-title { margin: 8px 0 4px; }
