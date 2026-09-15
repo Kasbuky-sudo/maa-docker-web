@@ -2726,7 +2726,7 @@ function toolsResourceContent() {
     ['服务端 (maa-server)', SERVICE_VER || '—', '运行中'],
     ['MAA 运行包', rt.installed || '未安装', rt.status === 'ready' ? '已就绪' : (rt.status || '未就绪')],
     ['运行包最新版', rt.latest || '未检查', rt.latest && rt.installed && rt.latest !== rt.installed ? '可更新' : '—'],
-    ['资源目录 (resource)', (rt.resourceCount != null ? rt.resourceCount + ' 项' : '未接入'), '—'],
+    ['资源目录 (resource)', (rt.resourcePresent === false ? '未就绪' : (rt.resourceCount != null ? rt.resourceCount + ' 项' : '未知')), '/api/resources/info'],
     ['作业站 / 干员数据', '未接入', '—']
   ];
   var body = '<table class="app-table-view mdw-res-table"><thead><tr><th>项目</th><th>版本 / 状态</th><th>说明</th></tr></thead><tbody>' +
@@ -2746,6 +2746,16 @@ function toolsResourceContent() {
 }
 
 function loadRuntimeInfo() {
+  // 资源目录信息（用于「资源更新」页显示实际条目数）
+  GET('/api/resources/info').then(function (r) {
+    if (!r) return;
+    RUNTIME_INFO.present = r.present;
+    RUNTIME_INFO.resourceCount = r.count != null ? r.count : (r.entries ? r.entries.length : null);
+    TOOL_STATE.runtime = Object.assign(TOOL_STATE.runtime || {}, {
+      resourceCount: RUNTIME_INFO.resourceCount,
+      resourcePresent: r.present,
+    });
+  }).catch(function () {});
   return GET('/api/runtime/status').then(function (st) {
     RUNTIME_INFO = { installed: st.installed || null, latest: st.latest || null, status: st.status || null };
     TOOL_STATE.runtime = Object.assign(TOOL_STATE.runtime || {}, {
