@@ -367,22 +367,39 @@ function baseTaskId(id) {
 function deviceStatusText(short) {
   if (BACKEND.online === false) return '离线预览 · 未连接后端';
   if (!RT.address) return short ? '未配置设备 · 空闲' : '未配置设备 · 请到「设置 → 连接设置」填写 ADB 地址';
-  var bus = isRunning() ? (RT.detail || '运行中') : '空闲 · 等待执行';
+  var ct = RT.connectTest || {};
+  var bus;
+  if (isRunning()) bus = RT.detail || '运行中';
+  else if (ct.running) bus = ct.detail || '连接测试中';
+  else if (ct.ok === true) bus = '连接测试通过 · ' + (ct.ms ? ct.ms + ' ms' : (ct.detail || '可下发任务'));
+  else if (ct.ok === false) bus = '上次连接失败：' + (ct.detail || '');
+  else bus = '空闲 · 等待执行';
   return RT.address + ' · MAA ' + (RT.maaVersion || '—') + ' · ' + bus;
+}
+
+/* 设备状态：真会话已连接 / 仅测试连接通过 / 未连接 / 未配置 */
+function deviceState() {
+  if (RT.connected) return 'connected';
+  var ct = RT.connectTest || {};
+  if (ct.ok === true && !ct.running) return 'tested';
+  return RT.address ? 'disconnected' : 'unconfigured';
 }
 
 function updateDeviceChip() {
   var chip = document.querySelector('.mdw-chip');
   var btn = document.getElementById('btn-connect');
-  var ok = !!RT.connected;
-  var configured = !!RT.address;
+  var state = deviceState();
   if (chip) {
-    chip.classList.toggle('ok', ok);
-    chip.innerHTML = '<span class="mdw-dot"></span>' +
-      (ok ? '已连接 ' + esc(RT.address) : (configured ? '未连接 ' + esc(RT.address) : '设备未配置'));
+    chip.classList.toggle('ok', state === 'connected' || state === 'tested');
+    var label;
+    if (state === 'connected') label = '已连接 ' + esc(RT.address);
+    else if (state === 'tested') label = '连接测试通过（未保持会话）';
+    else if (state === 'disconnected') label = '未连接 ' + esc(RT.address);
+    else label = '设备未配置';
+    chip.innerHTML = '<span class="mdw-dot"></span>' + label;
   }
   if (btn) {
-    btn.textContent = ok ? '断开' : '连接';
+    btn.textContent = state === 'connected' ? '断开' : '连接';
     btn.disabled = false;
   }
 }
