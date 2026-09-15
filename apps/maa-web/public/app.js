@@ -74,6 +74,22 @@ var DEVICE = {
 };
 Object.defineProperty(window, 'RUNNING', { get: isRunning });
 
+var LAST_VERSION = null;
+
+/* 版本号 → 顶栏 / 关于页 / 首页卡片（数据来自 /api/version 与 /api/system/info） */
+function setServiceVersion(v) {
+  if (v) LAST_VERSION = v;
+  var info = LAST_VERSION || {};
+  var sver = info.serviceVersion || '—';
+  var mver = info.maaVersion || RT.maaVersion || '—';
+  var el = document.querySelector('.mdw-titlebar-ver');
+  if (el) el.textContent = 'v' + sver + ' · MAA ' + mver;
+  var about = document.getElementById('about-version');
+  if (about) about.textContent = 'v' + sver;
+  var card = document.getElementById('home-service-version');
+  if (card) card.textContent = 'v' + sver;
+}
+
 var PHASE_TEXT = {
   idle: '空闲', loading: '加载资源', connecting: '连接设备', running: '任务执行中',
   stopping: '停止中', done: '已完成', error: '出错',
@@ -1114,15 +1130,19 @@ function loadHomeData() {
     setText('nas-uptime', fmtUptime(i.uptimeSeconds));
     setServiceVersion(i);
     setText('home-maa-version', i.maaVersion || '—');
-    setText('home-service-version', 'v' + (i.serviceVersion || '—'));
   }).catch(function () {});
   GET('/api/runtime/status').then(function (r) {
     setText('home-res-version', r.ready ? (r.maaVersion || '已就绪') : (r.phase || '未就绪'));
     setText('home-maa-version', r.maaVersion || document.getElementById('home-maa-version').textContent);
   }).catch(function () {});
   GET('/api/resources/info').then(function (r) {
-    var n = (r && r.count) || (r && r.entries && r.entries.length) || (r && r.ok != null ? '' : '');
-    setText('home-res-version', (n ? n + ' 项资源' : (r && r.version) || '已就绪'));
+    if (!r) return;
+    var n = r.count || (r.entries && r.entries.length) || 0;
+    var text;
+    if (r.present === false) text = '未就绪';
+    else if (n) text = n + ' 项资源';
+    else text = r.present === true ? '已就绪' : '未就绪';
+    setText('home-res-version', text);
   }).catch(function () {});
   loadSchedule().then(function () {
     var next = SCHEDULES.filter(function (s) { return s.enabled; }).sort(function (a, b) { return a.time < b.time ? -1 : 1; })[0];
@@ -2973,7 +2993,7 @@ function boot() {
     setServiceVersion(LAST_VERSION);
     connectLogStream();
     return refreshRunnerStatus();
-  }).catch(function () { /* 离线也继续渲染 */ });
+  }).catch(function (e) { console.warn('[boot]', e && e.message); });
 }
 
 window.addEventListener('hashchange', route);

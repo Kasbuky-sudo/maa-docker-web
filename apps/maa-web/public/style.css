@@ -187,7 +187,7 @@ body {
 .mdw-home-idle { font-size: 16px; font-weight: 400; color: var(--mdw-muted); }
 
 .mdw-home-nas { grid-column: span 3; }
-.mdw-nas-metrics { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-top: 8px; }
+.mdw-nas-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 8px; }
 .mdw-nas-metric { border: 1px solid var(--mdw-border); border-radius: 6px; padding: 10px 12px; background: var(--mdw-card-2); }
 .mdw-nas-m-label { font-size: 12px; color: var(--mdw-muted); }
 .mdw-nas-m-value { font-size: 20px; font-weight: 600; margin: 4px 0 6px; }
@@ -195,7 +195,7 @@ body {
 .mdw-nas-m-bar > div { height: 100%; border-radius: 2px; background: var(--mdw-accent); }
 
 /* ==================== Tasks Page (3-column) ==================== */
-.mdw-workbench { display: flex; gap: 16px; align-items: stretch; min-width: 960px; height: 100%; overflow: hidden; }
+.mdw-workbench { display: flex; gap: 16px; align-items: stretch; min-width: 0; height: 100%; overflow: hidden; }
 
 /* left: task list */
 .mdw-queue { flex: 0 0 240px; display: grid; grid-template-rows: auto 1fr auto; gap: 10px; overflow: hidden; }
@@ -864,3 +864,157 @@ body {
 .mdw-cow-right { flex: 0 0 300px; }
 .mdw-cow-log { max-height: 62vh; overflow-y: auto; font-family: Consolas, monospace; font-size: 12.5px; line-height: 1.75; }
 [data-theme="dark"] .mdw-cow-list { background: #2b2b2b; }
+
+/* ==================================================================
+ * 移动端适配（v1.9.0）
+ * 说明：原型期的布局用了 grid/flex + 960px 最小宽，在窄屏会横向溢出、
+ * 卡片被压成竖排单字。这里在移动端**改用块级堆叠**并提高优先级覆盖，
+ * 不依赖原有断点是否生效。断点：<= 900 平板，<= 760 手机。
+ * ================================================================== */
+@media (max-width: 760px) {
+  /* 页面骨架：允许纵向滚动、禁止横向拉伸 */
+  html, body { overflow-x: clip !important; height: auto !important; }
+  body { display: block !important; }
+  .mdw-col { height: auto !important; min-height: 0 !important; overflow: visible !important; }
+  .app-page-container, .app-page-container.has-padding {
+    height: auto !important; overflow: visible !important; overflow-x: clip !important;
+    padding: 12px !important;
+  }
+  .mdw-titlebar { height: auto !important; min-height: 44px; padding: 6px 10px !important; flex-wrap: wrap; gap: 8px; }
+  .mdw-titlebar-ver { display: none !important; }
+  .mdw-chip { max-width: 58vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ---------- 首页 ---------- */
+  .mdw-home-banner { height: 96px !important; padding: 0 16px !important; }
+  .mdw-home-banner-title { font-size: 20px !important; }
+  .mdw-home-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .mdw-home-actions .app-btn { flex: 1 1 calc(50% - 8px); min-width: 0; }
+  .mdw-home-actions #home-state { flex: 1 1 100%; }
+  .mdw-home-grid { display: block !important; }
+  .mdw-home-grid > * { width: 100% !important; margin-bottom: 12px !important; }
+  .mdw-home-card { padding: 14px 16px !important; }
+  .mdw-home-card-value { font-size: 22px !important; word-break: break-word !important; line-height: 1.3; }
+  .mdw-home-card-btn { width: 100% !important; }
+  .mdw-nas-metrics { display: block !important; }
+  .mdw-nas-metric { margin-bottom: 8px !important; }
+  .mdw-nas-m-label, .mdw-nas-m-value { word-break: break-word !important; }
+
+  /* ---------- 一键长草 ---------- */
+  .mdw-workbench {
+    display: block !important; min-width: 0 !important; width: 100% !important;
+    height: auto !important; overflow: visible !important;
+  }
+  .mdw-queue, .mdw-config, .mdw-live {
+    display: block !important; flex: none !important; width: 100% !important;
+    min-width: 0 !important; max-width: 100% !important; max-height: none !important;
+    overflow: visible !important; margin: 0 0 14px 0 !important;
+    position: static !important;
+  }
+  .mdw-queue-list { max-height: 42vh; overflow-y: auto; }
+  .mdw-queue-foot { margin-top: 10px; }
+  .mdw-qi { gap: 8px; padding: 8px; }
+  .mdw-qi-name { font-size: 14px; }
+  .mdw-config-status { font-size: 12px; line-height: 1.6; }
+  .mdw-timeline { min-height: 180px; max-height: 40vh; }
+  .mdw-queue-post { flex-wrap: wrap; }
+  .mdw-queue-post .app-select-menu { flex: 1 1 100%; }
+
+  /* ---------- 设置页 ---------- */
+  .mdw-settings { display: block !important; }
+  .mdw-settings-nav {
+    display: flex !important; width: 100% !important; overflow-x: auto !important;
+    border: none !important; margin-bottom: 12px;
+  }
+  .mdw-settings-nav-item { flex: 0 0 auto !important; border: none !important; padding: 8px 12px !important; }
+  .mdw-settings-row { display: block !important; }
+  .mdw-settings-ctl { margin-top: 8px !important; display: flex !important; flex-wrap: wrap; gap: 8px; }
+  .mdw-settings-ctl .app-input-text, .mdw-settings-ctl .app-select-menu, .mdw-settings-ctl .app-select-menu select { width: 100% !important; min-width: 0 !important; }
+
+  /* ---------- 自动战斗 ---------- */
+  .mdw-cp-grid { display: block !important; }
+  .mdw-cp-left { display: block !important; flex: none !important; width: 100% !important; }
+  .mdw-cp-left > * { margin-bottom: 12px; }
+  .mdw-cp-start { width: 100% !important; }
+  .mdw-cp-right { min-height: 0 !important; max-height: 50vh !important; width: 100% !important; }
+  .mdw-cp-dropdown { position: static !important; display: none; margin-top: 6px; }
+  .mdw-cp-tab { flex: 1 1 auto; text-align: center; padding: 7px 10px !important; font-size: 12.5px !important; }
+  .mdw-cp-list-tools { flex-wrap: wrap; }
+  .mdw-cp-stage-input { flex: 1 1 100%; }
+
+  /* ---------- 小工具 ---------- */
+  .mdw-tools-tabs {
+    display: flex !important; width: 100% !important; overflow-x: auto !important;
+    flex-wrap: nowrap !important; margin-bottom: 12px;
+  }
+  .mdw-tools-tab { flex: 0 0 auto !important; padding: 6px 12px !important; font-size: 13px !important; }
+  .mdw-tool-body { max-height: none !important; padding: 12px !important; }
+  .mdw-tool-body.mdw-tool-center { min-height: 320px !important; }
+  .mdw-tool-head { padding: 10px 12px !important; }
+  .mdw-tool-foot { display: block !important; padding: 10px 12px !important; }
+  .mdw-tool-cfg { display: block !important; }
+  .mdw-tool-cfg > * { margin-bottom: 8px; }
+  .mdw-tool-start { width: 100% !important; margin-top: 8px; }
+  .mdw-rc-cfg { display: block !important; }
+  .mdw-rc-cfg-left { margin-bottom: 12px; }
+  .mdw-rc-time-row { justify-content: space-between; }
+  .mdw-rc-clock .app-input-text { width: 44px !important; }
+  .mdw-rc-ops { gap: 4px 10px !important; font-size: 13px !important; }
+  .mdw-op-counters { flex-wrap: wrap; }
+  .mdw-op-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)) !important; gap: 8px !important; }
+  .mdw-op-card { padding: 8px 6px !important; }
+  .mdw-op-card .mdw-op-name { font-size: 12.5px !important; }
+  .mdw-depot-grid2 { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)) !important; }
+  .mdw-res-table { display: block; overflow-x: auto; white-space: nowrap; }
+  .mdw-monitor-prompt { font-size: 18px !important; }
+  .mdw-monitor-center, .mdw-monitor-bottom { flex-wrap: wrap; justify-content: center; }
+  .mdw-gacha-actions { flex-wrap: wrap; justify-content: center; }
+  .mdw-gacha-lore { font-size: 13px !important; text-align: left !important; }
+  .mdw-scr { width: 100% !important; }
+
+  /* ---------- 牛杂 ---------- */
+  .mdw-cow { display: block !important; min-height: 0 !important; }
+  .mdw-cow-left { width: 100% !important; margin-bottom: 14px; }
+  .mdw-cow-list { max-height: 40vh !important; }
+  .mdw-cow-start { width: 100% !important; }
+  .mdw-cow-desc { font-size: 16px !important; }
+  .mdw-cow-opts { max-width: 100% !important; }
+  .mdw-cow-right { width: 100% !important; max-height: 45vh; overflow-y: auto; }
+
+  /* ---------- 通用：表单行、日志、弹窗 ---------- */
+  .mdw-row, .mdw-maa-row { display: block !important; }
+  .mdw-row-r { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .mdw-row-ctl, .mdw-row-r .app-input-text, .mdw-row-r .app-select-menu select { width: 100% !important; min-width: 0 !important; }
+  .mdw-ctl, .mdw-num { width: 100% !important; max-width: 100% !important; }
+  .mdw-maa-scroll, .mdw-maa-tabs { max-width: 100% !important; }
+  .mdw-maa-row { max-width: 100% !important; }
+  .mdw-week { max-width: 100% !important; }
+  .mdw-sched-row { display: block !important; }
+  .mdw-sched-row > * { margin-bottom: 8px; width: 100% !important; }
+  .mdw-sched-time, .mdw-sched-repeat { width: 100% !important; }
+  .mdw-logpage { min-height: 45vh !important; font-size: 12px !important; }
+  .mdw-log-toolbar { gap: 8px; }
+  .mdw-modal-body { min-width: 0 !important; max-width: 92vw !important; }
+  .mdw-pick-list { max-height: 52vh; }
+  .mdw-cards, .mdw-grid { grid-template-columns: 1fr !important; }
+  pre, code, .mdw-pre, .mdw-log, .mdw-json { max-width: 100% !important; overflow-x: auto; }
+  table { max-width: 100%; }
+}
+
+/* 平板：卡片两列即可 */
+@media (min-width: 761px) and (max-width: 900px) {
+  .mdw-home-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .mdw-nas-metrics { grid-template-columns: repeat(3, 1fr) !important; }
+  .mdw-workbench { min-width: 0 !important; }
+  .mdw-cp-grid { display: block !important; }
+  .mdw-cp-left { width: 100% !important; flex: none !important; }
+  .mdw-cow { display: block !important; }
+  .mdw-cow-left, .mdw-cow-right { width: 100% !important; }
+}
+
+/* 移动端收尾：复选框与其后的「?」气泡保持同一行 */
+@media (max-width: 760px) {
+  .mdw-cp-checks, .mdw-rc-cfg-left { display: block !important; }
+  .mdw-cp-checks > *, .mdw-rc-cfg-left > * { display: inline-flex !important; vertical-align: middle; margin: 0 8px 10px 0; }
+  .mdw-check { max-width: 100%; }
+  .mdw-check > span { white-space: normal; word-break: break-word; }
+}
