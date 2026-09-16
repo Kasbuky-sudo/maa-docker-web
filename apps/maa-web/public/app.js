@@ -127,9 +127,12 @@ function syncRuntimeUI() {
   var running = isRunning();
   var btn = document.getElementById('q-start');
   if (btn) {
-    btn.textContent = running ? '停止' : 'Link Start!';
+    // stopping 时再点一次＝强制停止（服务端会立即释放会话，不再等 MaaCore 回调）
+    btn.textContent = running ? (RT.phase === 'stopping' ? '强制停止' : '停止') : 'Link Start!';
     btn.classList.toggle('mdw-btn-danger', running);
   }
+  var hstop = document.getElementById('home-stop');
+  if (hstop) hstop.textContent = RT.phase === 'stopping' ? '强制停止' : '停止';
   var home = document.getElementById('home-run');
   if (home) home.textContent = running ? '运行中…（' + (PHASE_TEXT[RT.phase] || RT.phase) + '）' : '开始一键长草';
   var hc = document.getElementById('home-connect');

@@ -36,6 +36,9 @@ let state = {
   lastChainError: null,
 };
 
+/* 停止看门狗：AsstStop 之后没有收到 TaskChainStopped 时的兜底定时器 */
+let stopWatchdog = null;
+
 // 连接测试：异步执行，进度通过 /api/runner/status 暴露，避免长请求被反代掐断（504）
 let connectTest = {
   running: false,
@@ -105,7 +108,14 @@ function adbPreconnect(adbPath, address) {
     });
     (async () => {
       const t0 = Date.now();
-      await run(['start-server'], 10000);
+      const boot = await run(['start-server'], 10000);
+      if (boot && boot.code === -1) {
+        // adb 二进制不存在/无法执行：后面的轮询永远等不到 device，别白等 45s
+        const why = (boot.out || '').trim().slice(0, 120) || 'adb 不可用';
+        logger.warn('runner', `adb 预连跳过：${why}`);
+        resolve({ connected: false, out: why });
+        return;
+      }
       await run(['connect', address], 10000);
       // 冷启动时 adb/设备要几十秒才响应；轮询确认设备真的进入 device 状态再
       // 交棒给 MaaCore —— 否则 MaaCore 会自己干等到 60s 超时才发 Connected。
@@ -353,6 +363,7 @@ function onCallback(msg, detailsJson) {
         logger.info('runner', `任务链完成: ${chain}`);
         break;
       case MSG_TASK_CHAIN_STOPPED:
+        if (stopWatchdog) { clearTimeout(stopWatchdog); stopWatchdog = null; }
         state.phase = 'done';
         state.detail = '已停止';
         state.finishedAt = Date.now();
@@ -579,20 +590,29 @@ async function runTask(jobs, opts = {}) {
   };
   seq += 1;
 
-  const s = await ensureSession(f, dir, conn, conn.adbPath || '/usr/bin/adb');
-  const handle = s.handle;
+  try {
+    const s = await ensureSession(f, dir, conn, conn.adbPath || '/usr/bin/adb');
+    const handle = s.handle;
 
-  if (opts.postAction && opts.postAction !== 'None') {
-    const post = { client_type: conn.clientType || 'Official' };
-    if (['Sleep', 'Hibernate', 'Shutdown'].includes(opts.postAction)) post.shutdown = opts.postAction;
-    if (opts.postAction === 'ExitGame') post.exit_game = true;
-    if (opts.postAction === 'ExitEmulator') post.exit_emulator = true;
-    jobs = jobs.slice();
-    jobs.push({ taskType: 'CloseDown', params: post, label: '完成后动作' });
+    if (opts.postAction && opts.postAction !== 'None') {
+      const post = { client_type: conn.clientType || 'Official' };
+      if (['Sleep', 'Hibernate', 'Shutdown'].includes(opts.postAction)) post.shutdown = opts.postAction;
+      if (opts.postAction === 'ExitGame') post.exit_game = true;
+      if (opts.postAction === 'ExitEmulator') post.exit_emulator = true;
+      jobs = jobs.slice();
+      jobs.push({ taskType: 'CloseDown', params: post, label: '完成后动作' });
+    }
+
+    appendJobs(f, handle, jobs);
+    if (!f.start(handle)) throw new Error('AsstStart 失败');
+  } catch (e) {
+    // 同 start()：失败要把 phase 挪出 busy 集合，否则 busy() 永远为真
+    state.phase = 'error';
+    state.detail = `启动失败: ${e.message}`;
+    state.finishedAt = Date.now();
+    logger.error('runner', `任务启动失败: ${e.message}`);
+    throw e;
   }
-
-  appendJobs(f, handle, jobs);
-  if (!f.start(handle)) throw new Error('AsstStart 失败');
   state.phase = 'running';
   state.detail = opts.detail || `执行中（${jobs.length} 项）`;
   logger.info('runner', `开始执行: ${state.tasks.join(', ')}`);
@@ -675,11 +695,12 @@ async function start(selectedTaskIds) {
 
   state.phase = 'connecting';
   state.detail = '连接设备中';
-  // 若刚做过连接测试，这里直接复用那个已连接的会话，不再重复握手
-  const s2 = await ensureSession(f, dir, conn, adbPath);
-  const handle = s2.handle;
+  try {
+    // 若刚做过连接测试，这里直接复用那个已连接的会话，不再重复握手
+    const s2 = await ensureSession(f, dir, conn, adbPath);
+    const handle = s2.handle;
 
-  const taskIds = appendJobs(f, handle, jobs);
+    const taskIds = appendJobs(f, handle, jobs);
 
   // 任务完成后的动作 —— MaaCore 的 CloseDown 任务。
   // 只有 shutdown 取值有协议文档（None/Sleep/Hibernate/Shutdown）；
@@ -698,23 +719,20 @@ async function start(selectedTaskIds) {
     if (id > 0) logger.info('runner', `追加完成后动作 CloseDown (#${id}) params=${JSON.stringify(post)}`);
   }
 
-  if (!f.start(handle)) throw new Error('AsstStart 失败');
+    if (!f.start(handle)) throw new Error('AsstStart 失败');
+  } catch (e) {
+    // 连接/下发/启动失败必须把 phase 挪出 busy 集合：停在 connecting 会让 busy()
+    // 永远为真，之后每次开始任务、连接测试都被「已有任务在执行中」顶掉。
+    // 会话保留（连接可能已经成功），下次直接复用，不用再等一次握手。
+    state.phase = 'error';
+    state.detail = `启动失败: ${e.message}`;
+    state.finishedAt = Date.now();
+    logger.error('runner', `任务启动失败: ${e.message}`);
+    throw e;
+  }
   state.phase = 'running';
   state.detail = `执行中（${jobs.length} 项任务）`;
   logger.info('runner', `任务开始执行: ${ids.join(', ')}`);
-  return snapshot();
-}
-
-function stop() {
-  if (!session) {
-    // 没有会话可停：把连接测试的状态也清掉（用户点「断开」）
-    connectTest = { running: false, ok: null, detail: '', address: connectTest.address, ms: null, startedAt: null, finishedAt: null };
-    return snapshot();
-  }
-  try { maaCore.funcs().stop(session.handle); } catch { /* ignore */ }
-  state.phase = 'stopping';
-  state.detail = '停止中';
-  logger.info('runner', '收到停止指令');
   return snapshot();
 }
 
@@ -830,16 +848,61 @@ async function runConnectTest() {
   }
 }
 
+/**
+ * 收尾：把 phase 挪出 busy 集合，必要时释放会话。
+ * teardown() 会立刻把 session 置空（destroy 延迟执行），所以 snapshot().connected
+ * 在返回给前端时已经是 false。
+ */
+function finishStop(detail, releaseSession) {
+  if (stopWatchdog) { clearTimeout(stopWatchdog); stopWatchdog = null; }
+  state.phase = 'done';
+  state.detail = detail || '已停止';
+  state.finishedAt = Date.now();
+  if (releaseSession) teardown(300);
+}
+
+/**
+ * 停止。这里踩过大坑，改动前务必读完：
+ *
+ * MaaCore 只有在「确实有任务链在跑」时才会回调 TaskChainStopped(10004)。
+ * 用户点顶栏「断开」时往往只是想释放会话（会话很可能来自启动预热 warmup，
+ * 并没有任务在跑），此时 AsstStop 不会触发任何回调 —— 旧实现把 phase 直接
+ * 设成 'stopping' 就干等着，结果 phase 永久停在 stopping，而 busy() 把
+ * stopping 算作忙：之后每一次「连接测试 / 开始任务」都被「任务执行中」拒绝。
+ * 真机表现就是「点了停止停不下来」「右上角点连接从来没成功过」，只能重启容器。
+ *
+ * 现在的策略：
+ *   - 没有任务链在跑（idle/done/error）→ 立即收尾 + 释放会话（真断开）
+ *   - 有任务链在跑（loading/connecting/running）→ 交给回调收尾，挂 15s 看门狗兜底
+ *   - 再次点击（phase 已是 stopping）→ 视为「强制停止」，立即 destroy
+ */
 function stop() {
   if (!session) {
     // 没有会话可停：把连接测试的状态也清掉（用户点「断开」）
     connectTest = { running: false, ok: null, detail: '', address: connectTest.address, ms: null, startedAt: null, finishedAt: null };
+    // 兜底：会话已销毁却残留 stopping 态（旧版本卡死过的进程）在这里一并清掉
+    if (state.phase === 'stopping') finishStop('已停止', false);
     return snapshot();
   }
+  const active = ['loading', 'connecting', 'running'].includes(state.phase);
+  const repeated = state.phase === 'stopping';
   try { maaCore.funcs().stop(session.handle); } catch { /* ignore */ }
+  logger.info('runner', `收到停止指令（当前阶段 ${state.phase}）`);
+
+  if (!active || repeated) {
+    finishStop(repeated ? '已强制停止' : '已停止', true);
+    return snapshot();
+  }
+
   state.phase = 'stopping';
-  state.detail = '停止中';
-  logger.info('runner', '收到停止指令');
+  state.detail = '停止中（等待当前任务收尾）';
+  if (stopWatchdog) clearTimeout(stopWatchdog);
+  stopWatchdog = setTimeout(() => {
+    stopWatchdog = null;
+    if (state.phase !== 'stopping') return;
+    logger.warn('runner', '停止指令 15s 内未收到 MaaCore 的任务链停止回调，强制释放会话');
+    finishStop('已停止（强制释放会话）', true);
+  }, 15000);
   return snapshot();
 }
 
