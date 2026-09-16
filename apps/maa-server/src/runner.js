@@ -157,7 +157,9 @@ function onCallback(msg, detailsJson) {
   }
   let d = {};
   try { d = JSON.parse(detailsJson || '{}'); } catch { /* ignore */ }
-  const chain = (d.details && d.details.chain) || d.chain || '';
+  // MAA 的 details JSON 里任务链名是 details.taskchain；旧代码读 d.chain 恒为空，
+  // 导致「任务链开始/出错」日志全部丢名字。
+  const chain = (d.details && (d.details.taskchain || d.details.chain)) || d.taskchain || '';
   try {
     switch (msg) {
       case MSG_ALL_TASKS_COMPLETED:
@@ -184,7 +186,8 @@ function onCallback(msg, detailsJson) {
         state.phase = 'error';
         state.detail = `任务链出错: ${chain || d.what || '未知'}`;
         state.finishedAt = Date.now();
-        logger.error('runner', `任务链出错: ${chain || d.what || ''}`);
+        // details 全量落日志：TaskChainError 的原因常在 details.what/why 里
+        logger.error('runner', `任务链出错: ${chain || d.what || ''} · details=${detailsJson}`);
         teardown(2000);
         break;
       case MSG_TASK_CHAIN_START:
@@ -200,9 +203,14 @@ function onCallback(msg, detailsJson) {
         logger.info('runner', '任务已停止');
         teardown(1500);
         break;
-      case MSG_SUBTASK_ERROR:
-        logger.warn('runner', `子任务出错: ${d.what || ''}`);
+      case MSG_SUBTASK_ERROR: {
+        // SubTaskError 的错误名在 details.subtask / details.what，原因在 why；
+        // 只读顶层 d.what 会打印出空串（真机踩过）。
+        const sd = d.details || {};
+        logger.warn('runner',
+          `子任务出错: ${sd.subtask || sd.what || d.what || '?'} · ${sd.why || d.why || ''} chain=${chain} · details=${detailsJson}`);
         break;
+      }
       default:
         if (d.what) logger.debug('runner', `msg=${msg} what=${d.what}`);
     }
