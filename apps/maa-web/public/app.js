@@ -227,6 +227,18 @@ var OPT_IDS = {
   // 生息演算
   'rc-theme': 'theme', 'rc-mode': 'mode', 'rc-craft': 'tools_to_craft',
   'rc-craft-points': 'num_craft_batches', 'rc-increment': 'increment_mode', 'rc-clear-store': 'clear_store',
+  // 基建换班：自研偏好（协议无对应字段，存储在任务配置里、不发给 MaaCore）
+  'i-squad': 'squad', 'i-low-mood-first': 'low_mood_first', 'i-dorm-sort': 'dorm_sort',
+  // 信用收支：自研偏好
+  'm-friends-once': 'friends_once', 'm-of1-once': 'of1_once', 'm-of1-squad': 'of1_squad',
+  // 每日巡检（update，自研调度项）
+  'u-operbox': 'operbox', 'u-depot': 'depot', 'u-interval': 'interval',
+  // 仓库识别（depot）
+  'dp-enable': 'enable',
+  // 自定义任务：task_names/params 由 runner 按协议 spec 转换（字符串会 split / JSON.parse）
+  'cu-template': 'template', 'cu-name': 'task_names', 'cu-json': 'params', 'cu-continue': 'continue_on_error',
+  // 换主题
+  'st-onlymain': 'onlymain',
 };
 
 /* 多选控件（同一选项 id 的多个复选框）声明 */
@@ -369,6 +381,30 @@ function collectTaskConfig() {
       out[taskId][opt] = el.value;
     }
   });
+  // check-number 勾选框联动：勾选框只是 UI 开关，数值字段才是事实来源。
+  // 未勾选时把对应数值置为「关闭值」，否则残留的数字框值会被当成勾选状态保存。
+  var curTask = baseTaskId(selectedTask);
+  var fchk = document.getElementById('f-medicine');
+  if (fchk && curTask === 'fight') {
+    out.fight = out.fight || {};
+    if (!fchk.checked) out.fight.medicine = 0;
+    var stChk = document.getElementById('f-stone');
+    if (stChk && !stChk.checked) out.fight.stone = 0;
+    var tmChk = document.getElementById('f-times');
+    if (tmChk && !tmChk.checked) out.fight.times = 2147483647;   // MAA 语义：INT_MAX = 刷到理智耗尽
+    var mtChk = document.getElementById('f-material-check');
+    if (mtChk && !mtChk.checked && out.fight.drops != null) out.fight.drops = '';
+  }
+  // 自动公招：各星级挂机时长（540/480/...）合成协议 recruitment_time 对象
+  var rtimes = {};
+  [3, 4, 5, 6].forEach(function (n) {
+    var s = document.getElementById('r-time-' + n);
+    if (s && s.value !== '') rtimes[String(n)] = Number(s.value);
+  });
+  if (Object.keys(rtimes).length && curTask === 'recruit') {
+    out.recruit = out.recruit || {};
+    out.recruit.recruitment_time = rtimes;
+  }
   // 理智作战周计划（协议无对应字段，服务端按当天星期展开成 stage）
   var wpEn = document.getElementById('f-weekly-en');
   if (wpEn) {
@@ -404,13 +440,15 @@ function collectTaskConfig() {
 function saveTaskConfig() {
   if (BACKEND.online === false) return;
   var current = collectTaskConfig();
-  // 服务端 PUT 是整体替换：必须带上其它任务已保存的配置
   var payload = {};
-  Object.keys(TASK_CFG || {}).forEach(function (k) {
-    if (k === '_meta' || current[k]) return;
-    payload[k] = TASK_CFG[k];
+  Object.keys(TASK_CFG || {}).forEach(function (k) { payload[k] = TASK_CFG[k]; });
+  Object.keys(current).forEach(function (k) {
+    // 深合并：配置面板按 tab 重建，一次只能收集到当前 tab 的控件；
+    // 其它 tab / 其它任务的已存键必须保留，不能整任务覆盖（真机踩过：
+    // advanced tab 的保存把 basic tab 的 medicine/stage 全冲掉）。
+    if (k === '_meta') { payload[k] = current[k]; return; }
+    payload[k] = Object.assign({}, TASK_CFG[k] || {}, current[k]);
   });
-  Object.keys(current).forEach(function (k) { payload[k] = current[k]; });
   TASK_CFG = payload;
   PUT('/api/tasks/config', payload).then(function () {
     var ind = document.getElementById('save-ind');
@@ -455,6 +493,30 @@ function applyTaskConfig(root) {
       el.value = v;
     }
   });
+  // check-number 勾选框回填：勾选框没有独立存储，从数值推断
+  // （medicine/stone: >0 勾选；times: 非 INT_MAX 勾选；材料: drops 非空勾选）
+  if (taskId === 'fight') {
+    function setChk(id, val) { var c = document.getElementById(id); if (c) c.checked = !!val; }
+    if (cfg.medicine != null) setChk('f-medicine', Number(cfg.medicine) > 0);
+    if (cfg.stone != null) setChk('f-stone', Number(cfg.stone) > 0);
+    if (cfg.times != null) setChk('f-times', Number(cfg.times) !== 2147483647);
+    if (cfg.drops != null) setChk('f-material-check', !!cfg.drops);
+  }
+  // 自动公招：recruitment_time 对象拆回各星级下拉
+  if (taskId === 'recruit' && cfg.recruitment_time && typeof cfg.recruitment_time === 'object') {
+    [3, 4, 5, 6].forEach(function (n) {
+      var s = document.getElementById('r-time-' + n);
+      var v = cfg.recruitment_time[String(n)];
+      if (s && v != null) s.value = String(v);
+    });
+  }
+  // 账号切换勾选框没有独立存储：account_name 非空即视为启用（并解除输入框禁用）
+  if (taskId === 'startup' && cfg.account_name) {
+    var accChk = document.getElementById('s-account-switch');
+    var accName = document.getElementById('s-account-name');
+    if (accChk) accChk.checked = true;
+    if (accName) accName.disabled = false;
+  }
   // 理智作战周计划
   if (taskId === 'fight' && cfg.weekly_plan) {
     weeklyPlan = Object.assign({ enabled: false, mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] }, cfg.weekly_plan);
@@ -1699,6 +1761,12 @@ function updateQueueCount(el) {
 
 function bindTaskEvents(el) {
   function selectTask(id) {
+    // 切换前把旧面板的当前值落盘：面板 DOM 即将被重建，pending 的 debounce
+    // 定时器触发时读到的会是新面板的默认值，把已保存的配置清空（真机踩过）。
+    clearTimeout(saveTimer);
+    if (selectedTask && selectedTask !== id && document.getElementById('task-config')) {
+      saveTaskConfig();
+    }
     selectedTask = id;
     activeConfigTab = 'basic';
     el.querySelectorAll('.mdw-qi').forEach(function (x) { x.classList.toggle('selected', x.dataset.task === id); });
@@ -1851,6 +1919,11 @@ function bindTaskEvents(el) {
     taskConfigEl.addEventListener('click', function (ev) {
       var t = ev.target.closest('.mdw-tab');
       if (!t || t.classList.contains('disabled')) return;
+      if (t.dataset.tab !== activeConfigTab) {
+        // 同 selectTask：旧 tab 的 DOM 即将销毁，先落盘
+        clearTimeout(saveTimer);
+        saveTaskConfig();
+      }
       activeConfigTab = t.dataset.tab;
       taskConfigEl.innerHTML = renderTaskConfig();
       bindConfigEvents(el);
