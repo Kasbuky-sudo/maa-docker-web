@@ -567,6 +567,13 @@ function applyTaskConfig(root) {
     } else {
       el.value = v;
     }
+    // range 滑块的 % 标签只挂在 oninput 上，程序化赋值不触发 oninput →
+    // 回填后滑块动了、标签还停在 HTML 默认的 50%（真机反馈：每次切换
+    // 界面都显示 50%，实际存的却是 30）。回填后必须手动同步标签。
+    if (el.type === 'range' && el.dataset && el.dataset.sliderLabel) {
+      var lbl = document.getElementById(el.dataset.sliderLabel);
+      if (lbl) lbl.textContent = el.value + '%';
+    }
   });
   // check-number 勾选框回填：勾选框没有独立存储，从数值推断
   // （medicine/stone: >0 勾选；times: 非 INT_MAX 勾选；材料: drops 非空勾选）
@@ -620,6 +627,12 @@ function applyTaskConfig(root) {
       c.checked = cfg.facility.indexOf(c.dataset.facility) >= 0;
     });
   }
+  // 兜底：所有带 data-slider-label 的滑块，标签一律对齐当前值
+  // （回填路径再多也不怕，标签不许和滑块值不一致）
+  document.querySelectorAll('#task-config input[type="range"][data-slider-label]').forEach(function (s) {
+    var l = document.getElementById(s.dataset.sliderLabel);
+    if (l) l.textContent = s.value + '%';
+  });
   // 菲亚梅塔
   if (taskId === 'infrast' && Array.isArray(cfg.fiammetta_targets)) {
     cfg.fiammetta_targets.forEach(function (name, i) {
@@ -1146,7 +1159,7 @@ function configInfrast(tab) {
       rowHtml(checkHtml('干员不足时自动补充', true, 'i-auto-fill')) +
       rowHtml(checkHtml('宿舍按心情排序换班', false, 'i-dorm-sort')) +
       '<div class="mdw-row block"><div class="mdw-row-label">基建工作心情阈值' + helpHtml('干员心情低于阈值触发换班。') + '</div>' +
-        '<div class="mdw-slider-row"><input type="range" id="i-mood-threshold" min="0" max="100" value="50" oninput="document.getElementById(\'i-mood-val\').textContent=this.value+\'%\'"/><span class="mdw-slider-val" id="i-mood-val">50%</span></div></div>' +
+        '<div class="mdw-slider-row"><input type="range" id="i-mood-threshold" min="0" max="100" value="50" data-slider-label="i-mood-val" oninput="document.getElementById(\'i-mood-val\').textContent=this.value+\'%\'"/><span class="mdw-slider-val" id="i-mood-val">50%</span></div></div>' +
       '<div class="mdw-row block"><div class="mdw-row-label">换班设施</div>' +
         '<div class="mdw-multi-box"><div class="mdw-multi-grid">' +
           INFRAST_FACILITIES.map(function (f) {
