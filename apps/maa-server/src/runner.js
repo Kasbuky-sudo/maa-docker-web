@@ -29,6 +29,7 @@ let state = {
   tasks: [],
   startedAt: null,
   finishedAt: null,
+  lastChainError: null,
 };
 
 // 连接测试：异步执行，进度通过 /api/runner/status 暴露，避免长请求被反代掐断（504）
@@ -163,10 +164,12 @@ function onCallback(msg, detailsJson) {
   try {
     switch (msg) {
       case MSG_ALL_TASKS_COMPLETED:
-        state.phase = 'done';
-        state.detail = '全部任务完成';
+        state.phase = state.lastChainError ? 'error' : 'done';
+        state.detail = state.lastChainError
+          ? `全部任务结束（有任务链失败: ${state.lastChainError}）`
+          : '全部任务完成';
         state.finishedAt = Date.now();
-        logger.info('runner', '全部任务完成');
+        logger.info('runner', state.detail);
         teardown(2000);
         break;
       case MSG_INIT_FAILED:
@@ -183,12 +186,13 @@ function onCallback(msg, detailsJson) {
         if (String(d.what).toLowerCase() === 'connected') connectedNotifiedAt = Date.now();
         break;
       case MSG_TASK_CHAIN_ERROR:
-        state.phase = 'error';
-        state.detail = `任务链出错: ${chain || d.what || '未知'}`;
-        state.finishedAt = Date.now();
+        // 一条链失败不代表全部失败：MaaCore 会继续执行后续链（真机实测
+        // StartUp 失败后 Fight 照常开始）。这里只记录，不 teardown；
+        // 等 MSG_ALL_TASKS_COMPLETED 统一收尾，避免把还没跑的任务杀掉。
+        state.lastChainError = chain || d.what || '未知';
+        state.detail = `任务链出错: ${state.lastChainError}（继续后续任务）`;
         // details 全量落日志：TaskChainError 的原因常在 details.what/why 里
         logger.error('runner', `任务链出错: ${chain || d.what || ''} · details=${detailsJson}`);
-        teardown(2000);
         break;
       case MSG_TASK_CHAIN_START:
         logger.info('runner', `任务链开始: ${chain}`);
@@ -250,12 +254,21 @@ const TASK_UI = require('./task-ui.json');
 
 // GUI 控件（task-ui.json，逐项对照 MaaWpfGui XAML）-> 协议字段取值
 function controlValue(ctl, opts) {
-  const v = opts[ctl.id];
+  // 键名解析：存储层用 catalog option id（snake_case，如 start_game_enabled / times），
+  // UI 绑定层用 MAA 桌面控件 id（PascalCase，如 StartGame / HasTimesLimited）。
+  // 只读 ctl.id 会永远拿到 undefined → 勾选框全变 false、check-number 落到
+  // valueWhenOff（真机踩过：times=1 被下发成 2147483647）。两套键都查。
+  const direct = opts[ctl.id];
+  const v = direct !== undefined ? direct : opts[ctl.bind];
   switch (ctl.kind) {
     case 'check':
       return ctl.bind ? !!v : undefined;
-    case 'check-number':
-      return ctl.bind ? (v ? Number(opts[ctl.id + 'Value'] ?? ctl.number.default) : ctl.number.valueWhenOff) : undefined;
+    case 'check-number': {
+      if (!ctl.bind) return undefined;
+      // 存储直接给了数字（如 fight.times=1）→ 透传；0 的语义与 valueWhenOff 一致
+      if (typeof v === 'number' && Number.isFinite(v)) return v;
+      return v ? Number(opts[ctl.id + 'Value'] ?? ctl.number.default) : ctl.number.valueWhenOff;
+    }
     case 'check-select':
       return ctl.bind ? (v ? opts[ctl.id + 'Value'] : undefined) : undefined;
     case 'select':
@@ -331,6 +344,18 @@ function buildParams(taskType, opts, extra) {
     }
   }
 
+  // 2b) 按协议 spec 归一化已写入的字段：UI 绑定层透传的值可能是字符串
+  // （如 tasks.json 里 series:"0"），而 MAA 协议要 number。
+  for (const f of (spec ? spec.fields : [])) {
+    const cur = params[f.name];
+    if (cur === undefined) continue;
+    if (f.type === 'number' && typeof cur === 'string' && cur.trim() !== '' && Number.isFinite(Number(cur))) {
+      params[f.name] = Number(cur);
+    } else if (f.type === 'boolean' && typeof cur === 'string') {
+      params[f.name] = cur === 'true' || cur === '1';
+    }
+  }
+
   // 3) 多任务共享项
   const conn = (extra && extra.connection) || readConnection();
   if (['StartUp', 'Fight', 'Recruit'].includes(taskType) && !params.client_type) {
@@ -380,6 +405,7 @@ async function runTask(jobs, opts = {}) {
     tasks: jobs.map((j) => j.label || j.taskType),
     startedAt: Date.now(),
     finishedAt: null,
+    lastChainError: null,
   };
   seq += 1;
 
@@ -474,7 +500,7 @@ async function start(selectedTaskIds) {
       { statusCode: 400 });
   }
 
-  state = { phase: 'loading', detail: '加载资源中', tasks: ids, startedAt: Date.now(), finishedAt: null };
+  state = { phase: 'loading', detail: '加载资源中', tasks: ids, startedAt: Date.now(), finishedAt: null, lastChainError: null };
   seq += 1;
 
   state.phase = 'connecting';
