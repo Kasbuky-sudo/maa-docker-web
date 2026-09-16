@@ -138,8 +138,14 @@ function syncRuntimeUI() {
   if (hs) hs.textContent = deviceStatusText(true);
   var sb = document.getElementById('sb-left');
   if (sb) {
-    sb.innerHTML = '<span class="mdw-dot' + (RT.connected ? ' ok' : '') + '"></span>' +
-      (RT.connected ? '已连接 ' + esc(RT.address) : (RT.address ? '未连接 ' + esc(RT.address) : '设备未配置'));
+    // 与 deviceState() 同一套判定：真会话已连接 / 连接测试通过（未保持会话）/
+    // 未连接 / 未配置。以前这里只看 RT.connected，导致右上角「未连接」而
+    // 其它位置显示「已连接」。
+    var st = deviceState();
+    var label = st === 'connected' ? '已连接 ' + esc(RT.address)
+      : st === 'tested' ? '连接测试通过 ' + esc(RT.address)
+        : st === 'disconnected' ? '未连接 ' + esc(RT.address) : '设备未配置';
+    sb.innerHTML = '<span class="mdw-dot' + (st === 'connected' || st === 'tested' ? ' ok' : '') + '"></span>' + label;
   }
   var sbr = document.getElementById('sb-right');
   if (sbr) sbr.textContent = (PHASE_TEXT[RT.phase] || RT.phase) + (RT.detail ? ' · ' + RT.detail : '');
