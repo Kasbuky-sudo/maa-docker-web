@@ -67,6 +67,13 @@ test('基建换班：自定义模式 / 队列轮换不被 Number() 吃掉', () =
     '设施为空时回落到默认集，不能下发空数组');
 });
 
+test('协议声明为 array 的字段：字符串自动切成数组（菲亚梅塔目标等）', () => {
+  const runner = loadRunner();
+  assert.deepEqual(runner.buildParams('Infrast', { fiammetta_targets: '清流' }, { connection: {} }).fiammetta_targets, ['清流']);
+  assert.deepEqual(runner.buildParams('Infrast', { fiammetta_targets: '清流；可露希尔' }, { connection: {} }).fiammetta_targets,
+    ['清流', '可露希尔']);
+});
+
 test('基建换班：无人机未知取值回落到 _NotUse（协议枚举）', () => {
   const runner = loadRunner();
   assert.equal(runner.buildParams('Infrast', { drones: 'manu_gold' }, { connection: {} }).drones, 'PureGold');

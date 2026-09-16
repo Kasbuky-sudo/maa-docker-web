@@ -533,11 +533,37 @@ function normalizeByProtocol(taskType, params, spec, o) {
     }
   }
 
-  // 通用兜底：spec 声明了 choices 的字段，取值不在枚举内时回落到默认值并记日志
+  // 通用兜底 1：spec 声明为 array 但拿到的是字符串（如 fiammetta_targets:"清流"）
+  for (const [name, f] of byName) {
+    if (f.type !== 'array') continue;
+    const cur = params[name];
+    if (cur === undefined || Array.isArray(cur)) continue;
+    params[name] = cur === '' || cur == null
+      ? []
+      : String(cur).split(/[,，;；]/).map((s) => s.trim()).filter(Boolean);
+  }
+
+  // 通用兜底 2：spec 声明了 choices 的字段，取值不在枚举内时回落到默认值并记日志
   for (const [name, f] of byName) {
     if (!Array.isArray(f.choices) || !f.choices.length) continue;
     const cur = params[name];
-    if (cur === undefined || f.choices.includes(String(cur))) continue;
+    if (cur === undefined) continue;
+    if (f.type === 'array') {
+      // 带枚举的数组（如菲亚梅塔目标）：协议要求「不在选项内或重复的条目会被忽略」，
+      // 按元素过滤，不能把整个数组当成标量去比对（会把多项压成第一项）。
+      const arr = Array.isArray(cur) ? cur : [cur];
+      const kept = [];
+      for (const x of arr) {
+        const s = String(x);
+        if (f.choices.includes(s) && !kept.includes(s)) kept.push(s);
+      }
+      if (kept.length !== arr.length) {
+        logger.warn('runner', `${taskType}.${name} 中 [${arr.join(',')}] 有条目不在协议枚举内，已忽略`);
+      }
+      params[name] = kept;
+      continue;
+    }
+    if (f.choices.includes(String(cur))) continue;
     const def = f.default !== undefined && f.default !== null ? String(f.default).replace(/^\\_/, '_') : null;
     const fallback = def && f.choices.includes(def) ? def : f.choices[0];
     logger.warn('runner', `${taskType}.${name}="${cur}" 不在协议枚举 [${f.choices.join('|')}] 内，已回落到 "${fallback}"`);
