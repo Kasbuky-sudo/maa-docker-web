@@ -534,12 +534,15 @@ function probeResolution(adbPath, address) {
       if (override) { w = +override[1]; h = +override[2]; source = 'override'; }
       else if (physical) { w = +physical[1]; h = +physical[2]; }
       if (!w || !h) { resolve({ error: '无法读取设备分辨率（设备未连接？）', raw: r.out.slice(0, 120) }); return; }
-      const ratioOk = Math.abs(w / h - 16 / 9) < 0.02;
+      // 设备可能报竖屏尺寸（如 1080x1920），MAA 只关心长短边比是否 16:9
+      const long = Math.max(w, h), short = Math.min(w, h);
+      const ratioOk = Math.abs(long / short - 16 / 9) < 0.02;
       let warning = null;
       if (!ratioOk) {
+        const fixW = Math.round(short * 16 / 9);
         warning = `分辨率 ${w}x${h} 不是 16:9，MAA 模板识别会失败。` +
-          `可执行 adb shell wm size ${h}x${Math.round(h * 16 / 9)} 设置覆盖分辨率`;
-      } else if (h < 720) {
+          `可执行 adb shell wm size ${fixW}x${short} 设置覆盖分辨率`;
+      } else if (short < 720) {
         warning = `分辨率 ${w}x${h} 低于 720p，识别可能不稳定`;
       }
       resolve({ width: w, height: h, source, ratioOk, warning });
