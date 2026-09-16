@@ -56,7 +56,7 @@
 本表由 [`apps/maa-server/src/feature-parity.json`](apps/maa-server/src/feature-parity.json) 自动生成，与 Web 界面「功能对照」页同源；更新数据后运行 `python3 scripts/gen-readme-parity.py` 同步（CI 会检查是否漂移）。
 
 <!-- parity:begin -->
-统计：**已实现 44** · 部分实现 8 · 未实现 7 · 桌面专属 4（共 63 项）
+统计：**已实现 45** · 部分实现 7 · 未实现 7 · 桌面专属 4（共 63 项）
 
 ### 执行管线（一切功能的地基）
 
@@ -64,11 +64,11 @@
 |---|---|---|
 | MaaCore C 接口 FFI（AsstCaller.h 全套） | ✅ 已实现 | koffi 直绑 libMaaCore.so，容器内冒烟实测通过 |
 | 资源加载 AsstLoadResource | ✅ 已实现 |  |
-| 设备连接 AsstAsyncConnect（ADB） | ✅ 已实现 | 连接设置页填地址后可用 |
-| 连接测试（AsstAsyncConnect 探活） | ✅ 已实现 | 顶部「连接」按钮 / 测试连接，返回耗时；本地 Windows 开发环境无 koffi 时会诚实报未就绪 |
+| 设备连接 AsstAsyncConnect（ADB） | ✅ 已实现 | 连接设置页填地址后可用；握手前先 adb connect 并确认设备在线，服务启动后后台预热会话（冷启动首次握手 MaaCore 自身要 ~60s，预热后稳定 1~2 秒） |
+| 连接测试（AsstAsyncConnect 探活） | ✅ 已实现 | 顶部「连接」按钮 / 测试连接，返回耗时与分辨率体检；顶栏与其它位置共用同一套连接状态（已连接 / 连接测试通过 / 未连接 / 未配置），状态不再互相打架 |
 | 任务下发 AsstAppendTask + 参数映射 | ✅ 已实现 | 任务目录 JSON → 集成协议参数 |
 | 执行/停止（AsstStart/AsstStop） | ✅ 已实现 | 前端开始行动 + 停止按钮 |
-| 原生回调日志（任务链/子任务事件） | ✅ 已实现 | 回调写入日志页，WebSocket 实时推送 |
+| 原生回调日志（任务链/子任务事件） | ✅ 已实现 | 任务链/子任务事件写入日志页；运行实况按 MAA 桌面端同款中文输出实况：理智、刷关次数、关卡掉落、当前设施、总用时；连接心跳与 ProcessTask 细节降为调试级不刷屏 |
 | 执行截图 / 实时画面 | ✅ 已实现 | GET /api/device/screenshot（ADB screencap 直出 PNG，真机 1920×1080 验证）；牛牛监控/抽卡页实时画面按目标帧率刷新并显示实测 FPS |
 | 参数映射（协议 schema 驱动） | ✅ 已实现 | scripts/gen-task-catalog.py 解析 MAA 官方 integration.md 生成 spec，runner 按字段类型强转，杜绝手写映射漂移 |
 | 实例选项（触控模式 / 客户端类型） | ✅ 已实现 | AsstSetInstanceOption(TouchMode=2, ClientType=6)，取值为 MaaCore AsstTypes.h 定义（minitouch/maatouch/adb/MaaFwAdb/MumuExtras） |
@@ -127,7 +127,7 @@
 | 功能 | 状态 | 说明 |
 |---|---|---|
 | 常规设置（客户端类型） | ✅ 已实现 |  |
-| 连接设置 | 🟡 部分实现 | 地址/ADB 路径/连接配置/触控模式/客户端类型可读写；设备分辨率探测（wm size，16:9 与 720p 提示）已接入 |
+| 连接设置 | ✅ 已实现 | 地址/ADB 路径/连接配置/触控模式/客户端类型可读写；设备分辨率探测（wm size，16:9 与 720p 提示）已接入 |
 | 启动设置 | ✅ 已实现 | 对应 Runtime 自动下载策略 |
 | 定时设置（多套配置独立定时） | 🟡 部分实现 | 简化版日程页，无多配置绑定 |
 | 外部通知（SMTP/TG/Discord/Server酱…） | ❌ 未实现 |  |
@@ -154,7 +154,7 @@
 | 任务页界面（逐项对照 MaaWpfGui XAML） | ✅ 已实现 | 开始唤醒/理智作战的常规+高级设置按官方 XAML 重建：复选框+数值、复选框+下拉、? 帮助、底部页签、左栏 ＋/全选/清空/完成后/开始·停止、顶部一键长草·自动战斗页签；数据在 task-ui.json |
 | 任务目录 / 参数 schema 由协议文档自动生成 | ✅ 已实现 | 18 种任务类型 / 168 个协议字段，改版只需重跑生成脚本 |
 | 移动端适配（≤760px 单列 + 抽屉导航） | ✅ 已实现 | 单列堆叠、官方 collapsed-float 抽屉导航、各页面无横向溢出（393px 实测） |
-| 前后端接入（状态轮询/配置持久化/实时画面） | ✅ 已实现 | 运行状态 2.5s 轮询、任务配置防抖持久化、设备实时画面、检查更新与资源校验 |
+| 前后端接入（状态轮询/配置持久化/实时画面） | ✅ 已实现 | 运行状态 2.5s 轮询、任务配置按任务深合并持久化（改动即存，离开页面用 keepalive 补写）、设备实时画面、检查更新与资源校验 |
 <!-- parity:end -->
 
 ## 架构

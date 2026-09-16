@@ -61,7 +61,7 @@ replacing the runtime invalidates the cached MaaCore resources and drops the old
 Generated from [`apps/maa-server/src/feature-parity.json`](apps/maa-server/src/feature-parity.json) — the same data that drives the "Feature parity" page in the Web UI. After editing the data run `python3 scripts/gen-readme-parity.py` (CI fails if this table is stale).
 
 <!-- parity:begin -->
-Summary: **44 done** · 8 partial · 7 missing · 4 desktop-only (of 63)
+Summary: **45 done** · 7 partial · 7 missing · 4 desktop-only (of 63)
 
 ### Execution pipeline (the foundation)
 
@@ -132,7 +132,7 @@ Summary: **44 done** · 8 partial · 7 missing · 4 desktop-only (of 63)
 | Feature | Status |
 |---|---|
 | General (client type) | ✅ Done |
-| Connection settings | 🟡 Partial |
+| Connection settings | ✅ Done |
 | Startup settings | ✅ Done |
 | Timer settings (per-profile schedules) | 🟡 Partial |
 | External notifications (SMTP/TG/Discord/…) | ❌ Missing |
