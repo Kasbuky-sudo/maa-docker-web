@@ -460,6 +460,91 @@ function controlValue(ctl, opts) {
   }
 }
 
+/* 界面 id → 协议设施名（spec: Mfg|Trade|Power|Control|Reception|Office|Dorm|Processing|Training）
+   「副手换人(deputy)」协议里没有对应设施，忽略即可。 */
+const INFRAST_FACILITY_MAP = {
+  manufacture: 'Mfg', mfg: 'Mfg',
+  trade: 'Trade',
+  power: 'Power',
+  control: 'Control',
+  office: 'Office',
+  reception: 'Reception',
+  dormitory: 'Dorm', dorm: 'Dorm',
+  workshop: 'Processing', processing: 'Processing',
+  training: 'Training',
+};
+/* 界面模式 → 协议 mode（0 Default / 10000 Custom / 20000 Rotation） */
+const INFRAST_MODE_MAP = { normal: 0, default: 0, custom: 10000, queue: 20000, rotation: 20000, rotate: 20000 };
+/* 界面无人机用途 → 协议 drones 枚举 */
+const INFRAST_DRONE_MAP = {
+  none: '_NotUse', notuse: '_NotUse', _notuse: '_NotUse',
+  trade_order: 'Money', money: 'Money',
+  trade_synthetic: 'SyntheticJade', synthetic: 'SyntheticJade',
+  manu_exp: 'CombatRecord', exp: 'CombatRecord', combatrecord: 'CombatRecord',
+  manu_gold: 'PureGold', gold: 'PureGold',
+  manu_stone: 'OriginStone', stone: 'OriginStone',
+  manu_chip: 'Chip', chip: 'Chip',
+};
+const INFRAST_FACILITY_DEFAULT = ['Mfg', 'Trade', 'Power', 'Control', 'Reception', 'Office', 'Dorm'];
+
+/**
+ * 按协议 spec 归一化参数：枚举兜底 + 特殊字段换算。
+ * MaaCore 的 Task::set_params 对枚举/取值非法一律返回 false，AsstAppendTask 随之
+ * 返回 0，而我们此前只会报一句「追加任务失败」，完全看不出是哪个字段。
+ */
+function normalizeByProtocol(taskType, params, spec, o) {
+  const fields = (spec && spec.fields) || [];
+  const byName = new Map(fields.map((f) => [f.name, f]));
+  const pick = (name) => (params[name] !== undefined ? params[name] : (o ? o[name] : undefined));
+
+  // Infrast：设施名 / 模式 / 无人机 / 心情阈值（界面是百分比，协议是 0~1）
+  if (taskType === 'Infrast') {
+    // facility 是协议必填项：界面传空（或配置里没存）时也必须给默认集，
+    // 否则 set_params 一样失败。
+    const rawFac = pick('facility');
+    const facList = Array.isArray(rawFac) ? rawFac
+      : (typeof rawFac === 'string' && rawFac.trim()
+        ? rawFac.split(/[,，;；]/).map((s) => s.trim()).filter(Boolean)
+        : null);
+    const mapped = (facList || []).map(
+      (x) => INFRAST_FACILITY_MAP[String(x).toLowerCase()] || (/^[A-Z]/.test(String(x)) ? String(x) : null)
+    ).filter(Boolean);
+    if (mapped.length) params.facility = mapped;
+    else {
+      params.facility = INFRAST_FACILITY_DEFAULT.slice();
+      if (facList && facList.length) logger.warn('runner', `基建换班：换班设施 [${facList.join(',')}] 无法识别，回落到默认设施集`);
+    }
+    // mode/threshold 是 number 型，界面存的却是 "normal"/"custom" 这类字符串，
+    // 第 2 步的 Number() 强转会直接把它们丢掉（自定义模式永远失效），这里补回。
+    const rawMode = pick('mode');
+    const numMode = Number(rawMode);
+    params.mode = (rawMode !== undefined && String(rawMode).trim() !== '' && Number.isFinite(numMode))
+      ? numMode
+      : (INFRAST_MODE_MAP[String(rawMode == null ? '' : rawMode).toLowerCase()] ?? 0);
+    const rawDrone = pick('drones');
+    if (rawDrone !== undefined) {
+      const raw = String(rawDrone);
+      const choices = (byName.get('drones') || {}).choices || [];
+      params.drones = choices.includes(raw) ? raw : (INFRAST_DRONE_MAP[raw.toLowerCase()] || '_NotUse');
+    }
+    if (typeof params.threshold === 'number' && params.threshold > 1) {
+      // 界面滑杆是 0~100 的百分比，协议要求 [0, 1.0]
+      params.threshold = Math.min(1, Math.max(0, params.threshold / 100));
+    }
+  }
+
+  // 通用兜底：spec 声明了 choices 的字段，取值不在枚举内时回落到默认值并记日志
+  for (const [name, f] of byName) {
+    if (!Array.isArray(f.choices) || !f.choices.length) continue;
+    const cur = params[name];
+    if (cur === undefined || f.choices.includes(String(cur))) continue;
+    const def = f.default !== undefined && f.default !== null ? String(f.default).replace(/^\\_/, '_') : null;
+    const fallback = def && f.choices.includes(def) ? def : f.choices[0];
+    logger.warn('runner', `${taskType}.${name}="${cur}" 不在协议枚举 [${f.choices.join('|')}] 内，已回落到 "${fallback}"`);
+    params[name] = fallback;
+  }
+}
+
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 // Fight 的关卡来源优先级：自定义剿灭 > 周计划（按当天） > 手动输入 > 关卡指定
@@ -537,6 +622,12 @@ function buildParams(taskType, opts, extra) {
     }
   }
 
+  // 2c) 界面语义值 → 协议值。界面用的是给人看的 id（manufacture / manu_gold /
+  // "normal" / 百分比阈值），MaaCore 的 set_params 认的是另一套（Mfg / PureGold /
+  // 0 / 0.3）。不改就会 AsstAppendTask 直接返回 0 —— 现象是「追加任务失败: 基建换班」，
+  // 而且 MaaCore 不会告诉你是哪个字段（真机踩过）。
+  normalizeByProtocol(taskType, params, spec, o);
+
   // 3) 多任务共享项
   const conn = (extra && extra.connection) || readConnection();
   if (['StartUp', 'Fight', 'Recruit'].includes(taskType) && !params.client_type) {
@@ -557,10 +648,15 @@ function appendJobs(f, handle, jobs) {
   for (const j of jobs) {
     const type = j.taskType || (j.task && j.task.taskType);
     const label = j.label || (j.task && j.task.name) || type;
-    const id = f.appendTask(handle, type, JSON.stringify(j.params || {}));
-    if (!id || id < 0) throw new Error(`追加任务失败: ${label}`);
+    const p = JSON.stringify(j.params || {});
+    const id = f.appendTask(handle, type, p);
+    if (!id || id < 0) {
+      // 把参数一并落日志：MaaCore 只回一个 0，不给原因，没有 params 根本没法查
+      logger.error('runner', `追加任务 ${label}(${type}) 被 MaaCore 拒绝，params=${p}`);
+      throw new Error(`追加任务失败: ${label}（${type} 参数被 MaaCore 拒绝，详见服务端日志）`);
+    }
     ids.push(id);
-    logger.info('runner', `追加任务 ${label} (#${id}) type=${type} params=${JSON.stringify(j.params || {})}`);
+    logger.info('runner', `追加任务 ${label} (#${id}) type=${type} params=${p}`);
   }
   return ids;
 }

@@ -471,6 +471,7 @@ function collectTaskConfig() {
   out._meta = {
     postAction: post ? post.value : (TASK_CFG._meta && TASK_CFG._meta.postAction) || 'None',
     timeoutRemind: timeoutInput ? Math.max(0, Number(timeoutInput.value) || 0) : (TASK_CFG._meta && TASK_CFG._meta.timeoutRemind) || 0,
+    queue: queueSnapshot(),
   };
   // 只保留 catalog 里存在的任务 id
   var valid = {};
@@ -647,7 +648,8 @@ function bindAutoSave() {
   document.addEventListener('change', function (ev) {
     var t = ev.target;
     if (!t || !t.closest) return;
-    if (!t.closest('#task-config, .mdw-config-global, .mdw-queue-foot')) return;
+    // 队列勾选（#task-list）也要自动保存：以前只监听配置面板，勾了任务刷新就没了
+    if (!t.closest('#task-config, .mdw-config-global, .mdw-queue-foot, #task-list')) return;
     scheduleSave();
   }, true);
   document.addEventListener('input', function (ev) {
@@ -812,6 +814,44 @@ var TASKS = [
   { id: 'custom', name: '自定义任务', tabs: ['basic'] },
   { id: 'switchtheme', name: '更换主题', tabs: ['basic'] },
 ];
+
+/* 队列持久化：任务项与勾选状态一起存进 tasks.json 的 _meta.queue。
+   以前 renderTaskList() 用的是硬编码默认勾选，「保存配置」只写 localStorage 的
+   mdw-queue（渲染时根本不读）→ 刷新后用户自己勾的任务就「被取消」。
+   queueChecked 为 null 表示服务端还没给过值，此时用 QUEUE_DEFAULTS。 */
+var QUEUE_DEFAULTS = ['startup', 'fight', 'infrast', 'award', 'recruit'];
+var queueChecked = null;
+
+/* 从服务端配置恢复队列（boot 拉到 /api/tasks/config 之后调用一次） */
+function applyQueueFromConfig() {
+  var q = TASK_CFG && TASK_CFG._meta && TASK_CFG._meta.queue;
+  if (!q) return;
+  if (Array.isArray(q.items) && q.items.length) {
+    var tabsOf = {};
+    TASKS.forEach(function (t) { tabsOf[t.id] = t.tabs; });
+    TASKS = q.items.map(function (it) {
+      var id = String(it.id || '');
+      return { id: id, name: String(it.name || it.id || ''), tabs: tabsOf[baseTaskId(id)] || ['basic'] };
+    });
+  }
+  if (Array.isArray(q.checked)) queueChecked = q.checked.map(String);
+}
+
+/* 当前队列快照（勾选优先读 DOM，DOM 不在时回落到内存态） */
+function queueSnapshot() {
+  var checked;
+  var list = document.getElementById('task-list');
+  if (list) {
+    checked = Array.prototype.map.call(list.querySelectorAll('.mdw-qi-check:checked'),
+      function (c) { return c.dataset.task; });
+  } else {
+    checked = (queueChecked || QUEUE_DEFAULTS).slice();
+  }
+  return {
+    items: TASKS.map(function (t) { return { id: t.id, name: t.name }; }),
+    checked: checked,
+  };
+}
 
 var CLIENTS = [
   ['Official', '官服'], ['Bilibili', 'Bilibili 服'], ['YostarEN', '国际服 (YostarEN)'],
@@ -1813,11 +1853,12 @@ function pageTasks(el) {
 }
 
 function renderTaskList() {
-  var defaultChecked = ['startup', 'fight', 'infrast', 'award', 'recruit'];
+  // 勾选状态来自服务端已保存的队列（_meta.queue），不再是硬编码默认值
+  var checked = queueChecked || QUEUE_DEFAULTS;
   return TASKS.map(function (t) {
     return '<div class="mdw-qi' + (t.id === selectedTask ? ' selected' : '') + '" data-task="' + t.id + '" role="button" tabindex="0">' +
       '<button type="button" class="mdw-qi-drag" data-task="' + t.id + '" title="拖拽排序"></button>' +
-      '<input type="checkbox" class="app-checkbox mdw-qi-check" data-task="' + t.id + '"' + (defaultChecked.indexOf(t.id) >= 0 ? ' checked' : '') + '/>' +
+      '<input type="checkbox" class="app-checkbox mdw-qi-check" data-task="' + t.id + '"' + (checked.indexOf(t.id) >= 0 ? ' checked' : '') + '/>' +
       '<span class="mdw-qi-name" data-task="' + t.id + '">' + esc(t.name) + '</span>' +
       '<button type="button" class="mdw-qi-rename" data-task="' + t.id + '" title="重命名"></button>' +
       '<button type="button" class="mdw-qi-copy" data-task="' + t.id + '" title="复制任务"></button>' +
@@ -1947,6 +1988,7 @@ function bindTaskEvents(el) {
     dragEl = null;
     dragSrc = null;
     rerenderList();
+    saveTaskConfig();   // 顺序也是队列状态的一部分
   }
 
   // Click handler via event delegation
@@ -1965,6 +2007,7 @@ function bindTaskEvents(el) {
         if (selectedTask === taskId) selectedTask = TASKS[0] ? TASKS[0].id : '';
         rerenderList();
         selectTask(selectedTask);
+        saveTaskConfig();
       });
       return;
     }
@@ -1976,6 +2019,7 @@ function bindTaskEvents(el) {
       openRenameModal(rTask.name, function (newName) {
         rTask.name = newName;
         rerenderList();
+        saveTaskConfig();
       });
       return;
     }
@@ -1999,6 +2043,8 @@ function bindTaskEvents(el) {
   function rerenderList() {
     var checks = {};
     taskList.querySelectorAll('.mdw-qi-check').forEach(function (c) { checks[c.dataset.task] = c.checked; });
+    // 同步到内存态：之后 renderTaskList() 才能按最新勾选项渲染（而不是旧快照）
+    queueChecked = Object.keys(checks).filter(function (k) { return checks[k]; });
     taskList.innerHTML = renderTaskList();
     taskList.querySelectorAll('.mdw-qi-check').forEach(function (c) { if (checks[c.dataset.task] !== undefined) c.checked = checks[c.dataset.task]; });
     taskList.querySelectorAll('.mdw-qi').forEach(function (x) { x.classList.toggle('selected', x.dataset.task === selectedTask); });
@@ -2035,22 +2081,31 @@ function bindTaskEvents(el) {
       rerenderList();
       selectTask(newId);
       updateQueueCount(el);
+      saveTaskConfig();
     });
   });
 
   var allBtn = el.querySelector('#q-all');
   if (allBtn) allBtn.addEventListener('click', function () {
     taskList.querySelectorAll('.mdw-qi-check').forEach(function (c) { c.checked = true; });
+    queueChecked = TASKS.map(function (t) { return t.id; });
     updateQueueCount(el);
+    saveTaskConfig();
   });
   var clearBtn = el.querySelector('#q-clear');
   if (clearBtn) clearBtn.addEventListener('click', function () {
     taskList.querySelectorAll('.mdw-qi-check').forEach(function (c) { c.checked = false; });
+    queueChecked = [];
     updateQueueCount(el);
+    saveTaskConfig();
   });
   var saveBtn = el.querySelector('#q-save');
   if (saveBtn) saveBtn.addEventListener('click', function () {
-    try { localStorage.setItem('mdw-queue', JSON.stringify(TASKS.map(function (t) { return t.id + ':' + t.name; }))); } catch (e) { }
+    // 以前只写 localStorage 的 mdw-queue（渲染时根本不读），刷新照样丢；
+    // 现在队列整体存到服务端 tasks.json 的 _meta.queue。
+    queueChecked = Array.prototype.map.call(taskList.querySelectorAll('.mdw-qi-check:checked'),
+      function (c) { return c.dataset.task; });
+    saveTaskConfig();
     saveBtn.textContent = '已保存';
     var b = saveBtn;
     setTimeout(function () { b.textContent = '保存配置'; }, 1200);
@@ -3916,7 +3971,11 @@ function boot() {
       return v;
     }).catch(function (e) { markOnline(false, e); return null; }),
     GET('/api/tasks/catalog').then(function (c) { CATALOG = c; return c; }).catch(function () { return null; }),
-    GET('/api/tasks/config').then(function (c) { TASK_CFG = (c && c.config) || {}; return TASK_CFG; }).catch(function () { return {}; }),
+    GET('/api/tasks/config').then(function (c) {
+      TASK_CFG = (c && c.config) || {};
+      applyQueueFromConfig();   // 恢复队列（任务项 + 勾选），必须在首渲染之前
+      return TASK_CFG;
+    }).catch(function () { return {}; }),
     refreshConnection(),
     loadLogs(),
   ]).then(function () {

@@ -180,6 +180,18 @@ const routes = {
       if (body._meta.timeoutRemind != null && !Number.isNaN(Number(body._meta.timeoutRemind))) {
         meta.timeoutRemind = Math.max(0, Math.min(720, Number(body._meta.timeoutRemind)));
       }
+      // 队列持久化（任务项 + 勾选状态）。以前队列只存在前端内存里，renderTaskList
+      // 用的是硬编码默认勾选，刷新后用户自己勾的任务（如信用收支）就「被取消」。
+      if (body._meta.queue && typeof body._meta.queue === 'object' && !Array.isArray(body._meta.queue)) {
+        const items = Array.isArray(body._meta.queue.items) ? body._meta.queue.items : [];
+        const checked = Array.isArray(body._meta.queue.checked) ? body._meta.queue.checked : [];
+        const cleanItems = items.slice(0, 60).map((it) => ({
+          id: String((it && it.id) || '').slice(0, 40),
+          name: String((it && it.name) || '').slice(0, 40),
+        })).filter((it) => it.id);
+        const cleanChecked = checked.slice(0, 60).map((x) => String(x).slice(0, 40));
+        if (cleanItems.length || cleanChecked.length) meta.queue = { items: cleanItems, checked: cleanChecked };
+      }
       if (Object.keys(meta).length) clean._meta = meta;
     }
     const file = path.join(config.CONFIG_DIR(), 'tasks.json');
