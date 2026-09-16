@@ -79,3 +79,43 @@ test('runtime: flat layout detection (official tarball extracts flat)', () => {
   const nested = v.checks.find((c) => c.name === 'MaaCore library');
   assert.equal(nested.ok, true);
 });
+
+test('runtime: resourcesInfo reports the installed version, not the pinned baseline', () => {
+  // 回归：运行包可在应用内独立升级，resourcesInfo 曾写死引导版本 MAA_VERSION，
+  // 导致升级到 v6.18.x 后首页「资源版本」仍旧显示 v6.17.5。
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'maa-ver-'));
+  const rtDir = path.join(tmp, 'runtime');
+  fs.mkdirSync(path.join(rtDir, 'resource', 'onnx'), { recursive: true });
+  fs.mkdirSync(path.join(rtDir, 'resource', 'tasks'), { recursive: true });
+  fs.writeFileSync(path.join(rtDir, 'libMaaCore.so'), 'fake');
+  fs.writeFileSync(path.join(rtDir, '.maa-docker-web-runtime.json'), JSON.stringify({
+    maaVersion: 'v6.18.0-beta.1',
+    asset: 'MAA-v6.18.0-beta.1-linux-x86_64.tar.gz',
+    arch: 'x64',
+    fetchedAt: '2026-09-16T09:52:39.599Z',
+  }));
+  process.env.DATA_DIR = tmp;
+  process.env.RUNTIME_DIR = rtDir;
+  process.env.RESOURCE_DIR = path.join(tmp, 'resource');
+  assert.equal(runtime.init(), true);
+
+  const info = runtime.resourcesInfo();
+  assert.equal(info.installed, 'v6.18.0-beta.1');
+  assert.equal(info.maaVersion, 'v6.18.0-beta.1');
+  // 引导版本仍需保留，供「检查更新」对比参考
+  assert.equal(info.pinned, runtime.MAA_VERSION);
+  assert.equal(info.entries, 2);
+  assert.equal(runtime.status().installed, 'v6.18.0-beta.1');
+});
+
+test('runtime: resourcesInfo falls back to baseline when marker is missing', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'maa-nomarker-'));
+  process.env.DATA_DIR = tmp;
+  process.env.RUNTIME_DIR = path.join(tmp, 'runtime');
+  process.env.RESOURCE_DIR = path.join(tmp, 'resource');
+  runtime.init();
+  const info = runtime.resourcesInfo();
+  assert.equal(info.present, false);
+  assert.equal(info.installed, runtime.MAA_VERSION);
+  assert.equal(info.maaVersion, runtime.MAA_VERSION);
+});

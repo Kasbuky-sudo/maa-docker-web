@@ -1,6 +1,6 @@
 {
   "name": "@maa-docker-web/maa-server",
-  "version": "0.8.9",
+  "version": "0.8.10",
   "description": "MAA for NAS - management API service wrapping the official MAA Linux runtime",
   "type": "commonjs",
   "main": "src/index.js",

@@ -18,8 +18,11 @@ const { logger } = require('./logger');
  * 更新则通过 GitHub releases API 对比 + 用官方 assets[].digest 校验，无需硬编码哈希）。 */
 const MAA_VERSION = 'v6.17.5';
 const RELEASE_BASE = `https://github.com/MaaAssistantArknights/MaaAssistantArknights/releases/download/${MAA_VERSION}`;
-const RELEASES_API = 'https://api.github.com/repos/MaaAssistantArknights/MaaAssistantArknights/releases/latest';
+const RELEASES_API = 'https://api.github.com/repos/MaaAssistantArknights/MaaAssistantArknights/releases';
 const UPDATE_CACHE_MS = 5 * 60 * 1000;
+// 预发布（beta）过滤：默认只看正式版，前端可显式要求包含预发布。
+// 站点配置：includePrerelease 为 true 时把 beta 也算作候选更新。
+const PRE_RELEASE_RE = /-(beta|alpha|rc|pre|dev)[.\-]?\d*/i;
 
 const ASSETS = Object.freeze({
   x64: Object.freeze({
@@ -49,6 +52,7 @@ const state = {
   busy: false,
   installed: null,        // 磁盘上实际安装的版本（marker.maaVersion）
   latest: null,           // GitHub 上的最新版本（checkUpdate 后填充）
+  latestPrerelease: false,// 该最新版本是否为预发布
   latestPublishedAt: null,
   updateCheckedAt: null,
 };
@@ -260,8 +264,11 @@ function archSuffix(arch) {
 /**
  * 查询 GitHub 最新 release 并与本地已安装版本对比。
  * 返回 { installed, latest, updateAvailable, asset, publishedAt, releaseName, error }。
+ *
+ * 默认只看正式 release；includePrerelease=true 时把 beta/alpha/rc 也纳入候选
+ * （否则上游只发预发布时，这里会一直报「已是最新」，而实际上游已经走在前面）。
  */
-async function checkUpdate({ force = false } = {}) {
+async function checkUpdate({ force = false, includePrerelease = false } = {}) {
   if (!force && state.updateCheckedAt && Date.now() - state.updateCheckedAt < UPDATE_CACHE_MS) {
     return {
       installed: state.installed,
@@ -278,19 +285,32 @@ async function checkUpdate({ force = false } = {}) {
     opts.dispatcher = new ProxyAgent(proxyUrl);
   }
   try {
-    const res = await fetch(RELEASES_API, opts);
+    const res = await fetch(`${RELEASES_API}?per_page=20`, opts);
     if (!res.ok) throw new Error(`releases API HTTP ${res.status}`);
-    const rel = await res.json();
+    const list = await res.json();
+    if (!Array.isArray(list) || !list.length) throw new Error('releases API 返回为空');
+    // 必须在同一个 list 里挑，不能分别查「最新正式版」和「最新预发布版」，
+    // 否则无法判断哪个更新（beta 通常更靠前）。
+    const useable = list.filter((r) => !r.draft).filter((r) => {
+      const name = r.tag_name || r.name || '';
+      if (includePrerelease) return true;
+      return !r.prerelease && !PRE_RELEASE_RE.test(name);
+    });
+    const rel = useable[0] || list[0];
     const latest = rel.tag_name || rel.name || null;
+    if (!latest) throw new Error('release 缺少 tag_name');
     const want = `MAA-${latest}-${archSuffix(state.arch)}.tar.gz`;
     const asset = (rel.assets || []).find((a) => a.name === want) || null;
     state.latest = latest;
+    state.latestPrerelease = !!rel.prerelease || PRE_RELEASE_RE.test(latest);
     state.latestPublishedAt = rel.published_at || null;
     state.updateCheckedAt = Date.now();
     return {
       installed: state.installed || null,
       pinned: MAA_VERSION,
       latest,
+      latestPrerelease: state.latestPrerelease,
+      includePrerelease,
       updateAvailable: !!latest && latest !== state.installed,
       releaseName: rel.name || '',
       publishedAt: rel.published_at || null,
@@ -310,7 +330,11 @@ async function checkUpdate({ force = false } = {}) {
 /** Locate key paths inside the extracted runtime. */
 function resourcesInfo() {
   const root = runtimeRoot();
-  if (!root) return { present: false, maaVersion: MAA_VERSION };
+  // 必须用磁盘上实际安装的版本（state.installed），不能写死引导版本 MAA_VERSION：
+  // 运行包可在应用内独立升级，写死会让首页「资源版本」永远停在引导版本
+  // （真机反馈：升到 v6.18.0-beta.1 后仍显示 v6.17.5）。
+  const installed = state.installed || MAA_VERSION;
+  if (!root) return { present: false, maaVersion: installed, installed };
   const candidates = ['resource', path.join('files', 'resource')];
   let resourceDir = null;
   for (const c of candidates) {
@@ -320,11 +344,22 @@ function resourcesInfo() {
       break;
     }
   }
+  let entries = 0;
+  if (resourceDir) {
+    try {
+      entries = fs.readdirSync(resourceDir).filter((f) => !f.startsWith('.')).length;
+    } catch {
+      entries = 0;
+    }
+  }
   return {
     present: true,
-    maaVersion: MAA_VERSION,
+    maaVersion: installed,
+    installed,
+    pinned: MAA_VERSION,
     root,
     resourceDir,
+    entries,
     arch: state.arch,
     fetchedAt: state.fetchedAt,
   };
@@ -358,8 +393,12 @@ function status() {
   return {
     installed: state.installed,
     latest: state.latest,
+    latestPrerelease: state.latestPrerelease,
     status: state.status,
-    maaVersion: state.maaVersion,
+    // maaVersion 是引导版本（不会随应用内升级变化），装了什么版本看 installed。
+    // 保留该字段仅为兼容既有调用方；前端请优先用 installed。
+    maaVersion: state.installed || state.maaVersion,
+    pinned: state.maaVersion,
     arch: state.arch,
     asset: state.asset || assetFor(state.arch).file,
     error: state.error,

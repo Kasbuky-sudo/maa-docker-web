@@ -1627,31 +1627,49 @@ function fmtSize(n) {
   return mb >= 1024 ? (mb / 1024).toFixed(2) + ' GB' : mb.toFixed(1) + ' MB';
 }
 
-function openRuntimeUpdateModal(btn) {
+function openRuntimeUpdateModal(btn, opts) {
+  opts = opts || {};
   if (BACKEND.online === false) { openInfoModal('无法操作', '后端未连接（离线预览）。'); return; }
   if (btn) { btn.disabled = true; btn.textContent = '检查中…'; }
-  GET('/api/runtime/check-update').then(function (r) {
+  var qs = '?force=1' + (opts.pre ? '&pre=1' : '');
+  GET('/api/runtime/check-update' + qs).then(function (r) {
     var installed = r.installed || '未安装';
     var latest = r.latest || '未知';
+    var pre = r.latestPrerelease;
+    // 装了 beta 再只看正式版时，latest 会「退」到更旧的正式版。这不是升级，
+    // 硬显示成「可更新到 v6.17.5」会让人以为要降级，得说清楚。
+    var isDowngrade = !!r.updateAvailable && isVersionOlder(latest, installed);
+    var result;
+    if (r.error) result = '检查失败：' + esc(r.error);
+    else if (isDowngrade) result = '当前安装的是预发布版，正式版仍停留在 ' + esc(latest) + '（不建议降级）';
+    else if (r.updateAvailable) result = '可更新到 ' + esc(latest);
+    else result = '已是最新版本';
     var body =
       '<div class="mdw-kv"><span>当前已安装</span><b>' + esc(installed) + '</b></div>' +
-      '<div class="mdw-kv"><span>官方最新</span><b>' + esc(latest) + '</b></div>' +
+      '<div class="mdw-kv"><span>' + (pre ? '最新预发布' : '官方最新（正式版）') + '</span><b>' + esc(latest) +
+        (pre ? ' <span class="mdw-muted">(beta)</span>' : '') + '</b></div>' +
       (r.publishedAt ? '<div class="mdw-kv"><span>发布时间</span><b>' + esc(String(r.publishedAt).slice(0, 10)) + '</b></div>' : '') +
       (r.asset ? '<div class="mdw-kv"><span>下载体积</span><b>' + esc(fmtSize(r.asset.size)) + '</b></div>' : '') +
-      '<div class="mdw-kv"><span>结果</span><b>' +
-        (r.error ? '检查失败：' + esc(r.error)
-          : (r.updateAvailable ? '可更新到 ' + esc(latest) : '已是最新版本')) + '</b></div>' +
+      '<div class="mdw-kv"><span>结果</span><b>' + result + '</b></div>' +
       (r.asset && r.asset.digest ? '<div class="mdw-muted" style="margin-top:8px;font-size:12px">将用官方 sha256 摘要校验下载文件</div>' : '');
     var buttons = [{ label: '关闭' }];
-    if (r.updateAvailable) {
-      buttons.push({ label: '下载并更新到 ' + latest, primary: true, onClick: function () {
+    // 装了 beta 之后默认视图会退到旧正式版，这时最该点的其实是「包含预发布」
+    if (!opts.pre) {
+      buttons.push({
+        label: isDowngrade ? '包含预发布版本（推荐）' : '包含预发布版本',
+        primary: isDowngrade,
+        onClick: function () { openRuntimeUpdateModal(null, { pre: true }); return false; },
+      });
+    }
+    if (r.updateAvailable && !isDowngrade) {
+      buttons.push({ label: '下载并更新到 ' + latest, primary: !isDowngrade && true, onClick: function () {
         POST('/api/runtime/fetch', { version: latest }).then(function () {
           pollRuntimeDownload(latest);
         }).catch(function (e) { openInfoModal('下载失败', e.message); });
       } });
-    } else {
+    } else if (!r.updateAvailable) {
       buttons.push({ label: '强制重新检查', onClick: function () {
-        GET('/api/runtime/check-update?force=1').then(function (r2) {
+        GET('/api/runtime/check-update?force=1' + (opts.pre ? '&pre=1' : '')).then(function (r2) {
           openInfoModal('检查更新', r2.updateAvailable
             ? '可更新到 ' + (r2.latest || '')
             : '已是最新版本' + (r2.installed ? '（' + r2.installed + '）' : '') +
@@ -1666,6 +1684,31 @@ function openRuntimeUpdateModal(btn) {
   }).then(function () {
     if (btn) { btn.disabled = false; btn.textContent = '检查更新'; }
   });
+}
+
+/** 版本号比较：a 是否比 b 旧。只做数字段比较，忽略 v 前缀，预发布按语义视为更新。 */
+function isVersionOlder(a, b) {
+  if (!a || !b) return false;
+  var norm = function (v) {
+    return String(v).replace(/^v/i, '').split(/[.\-+]/).map(function (x) {
+      var n = parseInt(x, 10);
+      return isNaN(n) ? x : n;
+    });
+  };
+  var x = norm(a), y = norm(b);
+  for (var i = 0; i < Math.max(x.length, y.length); i++) {
+    var p = x[i] === undefined ? 0 : x[i];
+    var q = y[i] === undefined ? 0 : y[i];
+    if (typeof p === 'number' && typeof q === 'number') {
+      if (p !== q) return p < q;
+    } else {
+      var sp = String(p), sq = String(q);
+      if (sp === sq) continue;
+      // 预发布标识符存在时视为更新的预发布分支，正式版之间不必细究
+      return sp < sq;
+    }
+  }
+  return false;
 }
 
 function pollRuntimeDownload(version) {
@@ -1684,6 +1727,9 @@ function pollRuntimeDownload(version) {
       if (el2) el2.textContent = line;
       if (st.status === 'ready' && !st.busy) {
         openInfoModal('更新完成', '已安装 ' + (st.installed || version));
+        // 清掉「官方最新」缓存：刚装上的就是最新的，否则弹窗会把上次缓存的旧
+        // 结果当成"官方最新"，看着像刚装上又落后了。
+        GET('/api/runtime/check-update?force=1').catch(function () {});
         refreshRunnerStatus();
         loadHomeData();
         return;
@@ -1751,17 +1797,21 @@ function loadHomeData() {
     // 读 r.ready 会永远为假 → 资源版本被写成「未就绪」（真机反馈：
     // 一连接就变未就绪）。下面 /api/resources/info 会用更准的结果覆盖它。
     var ready = r.status === 'ready' || r.ready === true;
-    setText('home-res-version', ready ? (r.maaVersion || '已就绪') : (r.status || r.phase || '未就绪'));
-    if (r.maaVersion) setText('home-maa-version', r.maaVersion);
+    // 别用 maaVersion 填这一格：那个字段是引导版本，运行包在应用内升级后不会变。
+    setText('home-res-version', ready ? '已就绪' : (r.status || r.phase || '未就绪'));
   }).catch(function () {});
   GET('/api/resources/info').then(function (r) {
     if (!r) return;
-    var n = r.count || (r.entries && r.entries.length) || 0;
-    var text;
-    if (r.present === false) text = '未就绪';
-    else if (n) text = n + ' 项资源';
-    else text = r.present === true ? '已就绪' : '未就绪';
-    setText('home-res-version', text);
+    // 这一格是「资源版本」，要显示运行包版本号，不是资源条目数。
+    // 运行包可在应用内独立升级，所以只能信服务端给的已安装版本。
+    var ver = r.installed || r.maaVersion || null;
+    if (r.present === false || !ver) {
+      setText('home-res-version', '未就绪');
+    } else {
+      var n = r.entries || r.count || (r.entries === 0 ? 0 : 0);
+      setText('home-res-version', ver + (n ? ' · ' + n + ' 项资源' : ''));
+    }
+    if (ver) setText('home-maa-version', ver);
   }).catch(function () {});
   loadSchedule().then(function () {
     // 服务端调度器给出的下一班（比简单按时间排序准）

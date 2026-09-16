@@ -69,13 +69,18 @@ const routes = {
 
   'GET /api/version': () => ({
     serviceVersion: PACKAGE_VERSION,
-    maaVersion: runtime.MAA_VERSION,
+    // 与 /api/system/info 一致：给实际安装的运行包版本，不是引导版本
+    maaVersion: runtime.status().installed || runtime.MAA_VERSION,
+    maaVersionPinned: runtime.MAA_VERSION,
     nodeVersion: process.version,
   }),
 
   'GET /api/system/info': () => ({
     serviceVersion: PACKAGE_VERSION,
-    maaVersion: runtime.MAA_VERSION,
+    // maaVersion 要给「磁盘上实际安装的」版本，不能给引导版本：
+    // 运行包可在应用内独立升级，写死会让首页永远显示旧版本。
+    maaVersion: runtime.status().installed || runtime.MAA_VERSION,
+    maaVersionPinned: runtime.MAA_VERSION,
     architecture: process.arch,
     platform: `${os.type()} ${os.release()}`,
     hostname: os.hostname(),
@@ -105,8 +110,12 @@ const routes = {
   'GET /api/runtime/status': () => runtime.status(),
 
   // 与 GitHub 最新 release 对比（带 5 分钟缓存），前端据此决定是否提示更新
+  // ?force=1 强制跳过缓存；?pre=1 把 beta/alpha/rc 也纳入候选（默认只看正式版）
   'GET /api/runtime/check-update': (req, url) =>
-    runtime.checkUpdate({ force: url.searchParams.get('force') === '1' }),
+    runtime.checkUpdate({
+      force: url.searchParams.get('force') === '1',
+      includePrerelease: url.searchParams.get('pre') === '1',
+    }),
 
   async 'POST /api/runtime/fetch'(req) {
     if (runtime.status().busy) {
