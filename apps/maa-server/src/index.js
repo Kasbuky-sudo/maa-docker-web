@@ -457,6 +457,9 @@ function start() {
 if (require.main === module) {
   start().then((port) => {
     logger.info('server', `listening on 0.0.0.0:${port}`);
+    // 后台预热会话：MaaCore 冷启动首次握手要 ~60s，提前做掉，用户点连接时
+    // 就能直接复用（1 秒级）。失败只记日志。
+    try { runner.warmup(); } catch (e) { logger.warn('server', `预热未启动: ${e.message}`); }
   });
 }
 

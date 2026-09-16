@@ -167,6 +167,31 @@ async function ensureSession(f, dir, conn, adbPath, waitMs = 90000) {
   throw new Error(`连接设备超时（${conn.address}），请检查 ADB 地址与网络`);
 }
 
+/**
+ * 后台预热：容器启动后先建好会话。
+ * MaaCore 在 adb/设备冷启动时会耗掉自己 60s 的等待才发 Connected（实测重启后
+ * 首次 61s、之后 1.2s），与其让用户第一次点「连接」干等，不如启动时就把这一
+ * 分钟花掉——之后 testConnect / start 都直接复用会话。失败静默，不影响启动。
+ */
+function warmup(delayMs = 8000) {
+  setTimeout(() => {
+    (async () => {
+      try {
+        const conn = readConnection();
+        if (!conn.address || busy()) return;
+        const dir = runtime._internal.runtimeRoot();
+        if (!dir) return;
+        const f = maaCore.funcs();
+        logger.info('runner', `启动预热：提前建立到 ${conn.address} 的会话`);
+        await ensureSession(f, dir, conn, conn.adbPath || '/usr/bin/adb');
+        logger.info('runner', '启动预热完成，后续连接将复用会话');
+      } catch (e) {
+        logger.warn('runner', `启动预热未成功（不影响使用）: ${e.message}`);
+      }
+    })();
+  }, delayMs);
+}
+
 function snapshot() {
   const conn = readConnection();
   let connected = false;
@@ -893,4 +918,4 @@ async function runConnectTest() {
   }
 }
 
-module.exports = { snapshot, start, stop, testConnect, runTask, onMessage, probeResolution, connectTestState: () => ({ ...connectTest }), busy, buildParams, _resetForTest: () => { state = { phase: 'idle', detail: '', tasks: [], startedAt: null, finishedAt: null }; } };
+module.exports = { snapshot, start, stop, testConnect, runTask, onMessage, probeResolution, warmup, connectTestState: () => ({ ...connectTest }), busy, buildParams, _resetForTest: () => { state = { phase: 'idle', detail: '', tasks: [], startedAt: null, finishedAt: null }; } };
