@@ -83,8 +83,8 @@ function adbPreconnect(adbPath, address) {
   return new Promise((resolve) => {
     if (!address) { resolve({ connected: false, out: 'no address' }); return; }
     const { spawn } = require('node:child_process');
-    const runOnce = () => new Promise((done) => {
-      const p = spawn(adbPath, ['connect', address], { timeout: 15000 });
+    const run = (args, ms) => new Promise((done) => {
+      const p = spawn(adbPath, args, { timeout: ms });
       let out = '';
       p.stdout.on('data', (c) => { out += String(c); });
       p.stderr.on('data', (c) => { out += String(c); });
@@ -92,11 +92,19 @@ function adbPreconnect(adbPath, address) {
       p.on('close', () => done({ out }));
     });
     (async () => {
-      let r = await runOnce();
-      // 冷启动时第一次常常是 "cannot connect" / 空输出，重试一轮
-      if (!/connected to|already connected/i.test(r.out)) r = await runOnce();
-      const ok = /connected to|already connected/i.test(r.out);
-      logger.info('runner', `adb connect ${address}: ${ok ? '已就绪' : '未成功（交给 MaaCore）'}`);
+      const t0 = Date.now();
+      await run(['start-server'], 8000);
+      // connect 本身在冷启动时会挂很久，超时放短、靠 devices 校验结果
+      await run(['connect', address], 8000);
+      // 关键：确认设备真的出现在 adb devices 里，否则 MaaCore 会自己干等 60s
+      let r = await run(['devices'], 8000);
+      let ok = new RegExp('^' + address.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s+device\\s*$', 'm').test(r.out || '');
+      if (!ok) {
+        await run(['connect', address], 8000);
+        r = await run(['devices'], 8000);
+        ok = new RegExp('^' + address.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s+device\\s*$', 'm').test(r.out || '');
+      }
+      logger.info('runner', `adb 预连 ${address}: ${ok ? '设备已就绪' : '未就绪（交给 MaaCore）'}（${Date.now() - t0} ms）`);
       resolve({ connected: ok, out: (r.out || '').trim().slice(0, 200) });
     })();
   });
