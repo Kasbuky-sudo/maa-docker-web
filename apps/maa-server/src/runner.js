@@ -62,10 +62,22 @@ runtime.onRuntimeReplaced(() => {
 function ensureResource(f, dir) {
   const key = `${dir}#${(runtime.status() || {}).installed || 'unknown'}`;
   if (resourceKey === key) return false;
+  // 加载期间借用 loading 态，但必须还原：phase 停在 loading 会让 busy() 永远
+  // 为真，之后每一次连接测试/开始任务都会被「任务执行中」挡掉（真机反馈：
+  // 右上角点了连接从来没成功过）。
+  const prev = state.phase;
   state.phase = 'loading';
   state.detail = '加载资源中';
-  f.setUserDir(dir);
-  if (!f.loadResource(dir)) throw new Error('AsstLoadResource 失败：运行包资源不完整？');
+  try {
+    f.setUserDir(dir);
+    if (!f.loadResource(dir)) throw new Error('AsstLoadResource 失败：运行包资源不完整？');
+  } catch (e) {
+    state.phase = prev === 'loading' ? 'idle' : prev;
+    if (state.phase === 'idle') state.detail = '';
+    throw e;
+  }
+  state.phase = prev === 'loading' ? 'idle' : prev;
+  if (state.phase === 'idle') state.detail = '';
   resourceKey = key;
   logger.info('runner', `MaaCore 资源已加载（${key}）`);
   return true;
