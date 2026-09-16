@@ -239,6 +239,22 @@ var OPT_IDS = {
   'cu-template': 'template', 'cu-name': 'task_names', 'cu-json': 'params', 'cu-continue': 'continue_on_error',
   // 换主题
   'st-onlymain': 'onlymain',
+  // 理智作战 · 高级设置
+  'f-anni-check': 'UseCustomAnnihilation', 'f-anni': 'AnnihilationStage',
+  'f-expire-activity': 'UseExpireMedicineForActivity', 'f-hide-proxy': 'HideSeries',
+  'f-stone-save': 'AllowUseStoneSave', 'f-manual-stage': 'CustomStageCode',
+  'f-manual-stage-name': 'CustomStageName', 'f-expire-reset': 'StageResetMode',
+  'f-alt-stage': 'UseAlternateStage', 'f-alt-1': 'alt_stage_1', 'f-alt-2': 'alt_stage_2',
+  'f-hide-closed': 'HideUnavailableStage',
+  // 自动公招 · 高级设置（自研偏好）
+  'r-tag-3-prefer': 'tag3_prefer', 'r-tag-3-select': 'tag3_select',
+  'r-refresh-no-permit': 'refresh_no_permit', 'r-refresh-max': 'refresh_max', 'r-retry': 'retry',
+  // 信用收支 · 高级设置（自研偏好）
+  'm-strategy': 'strategy', 'm-buy-max': 'buy_max',
+  // 自动肉鸽 · 高级设置
+  'rg-seed': 'seed', 'rg-delay-stop': 'delay_stop',
+  // 开始唤醒：账号切换开关（原来只能靠 account_name 推断，取消勾选存不下）
+  's-account-switch': 'AccountSwitchEnabled',
 };
 
 /* 多选控件（同一选项 id 的多个复选框）声明 */
@@ -350,11 +366,19 @@ function optIdOf(el) {
 function collectTaskConfig() {
   var out = {};
   var selected = TASKS.map(function (t) { return baseTaskId(t.id); });
-  document.querySelectorAll('#task-config [id], .mdw-config-global [id]').forEach(function (el) {
+  // 选择器必须显式带上 [data-facility]：设施复选框没有 id，只靠 [id] 选不中
+  document.querySelectorAll('#task-config [id], #task-config [data-facility], .mdw-config-global [id]').forEach(function (el) {
     var opt = optIdOf(el);
     if (!opt) return;
     var taskId = baseTaskId(selectedTask);
     if (!out[taskId]) out[taskId] = {};
+    // 多选设施（data-facility）必须先判：下面的 checkbox 分支会命中并 return，
+    // 把设施数组覆盖成单个布尔值（真机反馈：换班设施存不下来）。
+    if (el.dataset && el.dataset.facility) {
+      out[taskId].facility = out[taskId].facility || [];
+      if (el.checked) out[taskId].facility.push(el.dataset.facility);
+      return;
+    }
     if (el.type === 'checkbox') {
       if (opt === 'confirm') {
         // 多值：只保留勾选的星级
@@ -394,6 +418,15 @@ function collectTaskConfig() {
     if (tmChk && !tmChk.checked) out.fight.times = 2147483647;   // MAA 语义：INT_MAX = 刷到理智耗尽
     var mtChk = document.getElementById('f-material-check');
     if (mtChk && !mtChk.checked && out.fight.drops != null) out.fight.drops = '';
+  }
+  // 理智作战「手动输入关卡名」：勾选后以文本框内容作为 stage
+  if (curTask === 'fight') {
+    var mChk = document.getElementById('f-manual-stage');
+    var mName = document.getElementById('f-manual-stage-name');
+    if (mChk && mChk.checked && mName && mName.value) {
+      out.fight = out.fight || {};
+      out.fight.stage = mName.value;
+    }
   }
   // 自动公招：各星级挂机时长（540/480/...）合成协议 recruitment_time 对象
   var rtimes = {};
@@ -510,8 +543,14 @@ function applyTaskConfig(root) {
       if (s && v != null) s.value = String(v);
     });
   }
-  // 账号切换勾选框没有独立存储：account_name 非空即视为启用（并解除输入框禁用）
-  if (taskId === 'startup' && cfg.account_name) {
+  // 账号切换：优先用存下来的开关值，旧配置没有时按 account_name 推断
+  if (taskId === 'startup' && cfg.AccountSwitchEnabled != null) {
+    var aChk = document.getElementById('s-account-switch');
+    var aName = document.getElementById('s-account-name');
+    if (aChk) aChk.checked = !!cfg.AccountSwitchEnabled;
+    if (aName) aName.disabled = !cfg.AccountSwitchEnabled;
+  }
+  if (taskId === 'startup' && cfg.AccountSwitchEnabled == null && cfg.account_name) {
     var accChk = document.getElementById('s-account-switch');
     var accName = document.getElementById('s-account-name');
     if (accChk) accChk.checked = true;
@@ -531,6 +570,13 @@ function applyTaskConfig(root) {
         if (chk) chk.checked = (weeklyPlan[inp.dataset.day] || []).length > 0;
       });
     }
+  }
+  // 基建设施多选（data-facility）：collect 会存成 facility 数组，
+  // 但这里一直没有回填分支 → 切走再回来就变回默认勾选（真机反馈）。
+  if (taskId === 'infrast' && Array.isArray(cfg.facility)) {
+    document.querySelectorAll('#task-config [data-facility]').forEach(function (c) {
+      c.checked = cfg.facility.indexOf(c.dataset.facility) >= 0;
+    });
   }
   // 菲亚梅塔
   if (taskId === 'infrast' && Array.isArray(cfg.fiammetta_targets)) {
