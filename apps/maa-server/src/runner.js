@@ -20,8 +20,12 @@ const MSG_ALL_TASKS_COMPLETED = 3;
 const MSG_TASK_CHAIN_ERROR = 10000;
 const MSG_TASK_CHAIN_START = 10001;
 const MSG_TASK_CHAIN_COMPLETED = 10002;
+const MSG_TASK_CHAIN_EXTRA_INFO = 10003;
 const MSG_TASK_CHAIN_STOPPED = 10004;
 const MSG_SUBTASK_ERROR = 20000;
+const MSG_SUBTASK_START = 20001;
+const MSG_SUBTASK_COMPLETED = 20002;
+const MSG_SUBTASK_EXTRA_INFO = 20003;
 
 let state = {
   phase: 'idle', // idle|loading|connecting|running|stopping|done|error
@@ -150,6 +154,62 @@ function onMessage(fn) {
   return () => messageSubscribers.delete(fn);
 }
 
+// 基建设施英文键 → 中文（MAA 桌面端「当前设施: 贸易站 02」同款）
+const FACILITY_CN = {
+  Manufacture: '制造站', Mfg: '制造站',
+  Trade: '贸易站',
+  Power: '发电站',
+  Office: '办公室',
+  Reception: '会客室',
+  Dorm: '宿舍', Dormitory: '宿舍',
+  Training: '训练室', Train: '训练室',
+  Processing: '加工站',
+  Control: '控制中枢',
+};
+
+/**
+ * 把 SubTaskExtraInfo 的 details 翻成 MAA 桌面端那种中文实况。
+ * 字段取自真机 asst.log 里 MaaCore 实际下发的回调样本（v6.17.5）。
+ * 返回 null 表示这条不值得占用运行实况（内部噪声）。
+ */
+function describeSubTaskExtra(d) {
+  const what = d.what || '';
+  const det = d.details || {};
+  switch (what) {
+    case 'SanityBeforeStage':
+      return `理智 ${det.current_sanity}/${det.max_sanity}`;
+    case 'FightTimes':
+      return `已完成 ${det.times_finished} 次 · 本次消耗理智 ${det.sanity_cost} · 代理 ${det.series} 倍`;
+    case 'StageDrops': {
+      const code = (det.stage && det.stage.stageCode) || '';
+      const drops = (det.drops || []).map((x) => `${x.itemName}×${x.quantity}`).join('、');
+      return `关卡 ${code} ${det.stars}星${drops ? ' · 掉落：' + drops : ''}`;
+    }
+    case 'EnterFacility': {
+      const name = FACILITY_CN[det.facility] || det.facility || '';
+      const idx = det.index != null ? String(det.index).padStart(2, '0') : '';
+      return `当前设施：${name}${idx ? ' ' + idx : ''}`;
+    }
+    case 'ExceededLimit':
+      // 每次 ProcessTask 达到上限都会发，纯内部噪声
+      return null;
+    default:
+      // 未识别的也留痕（便于下次采集真机样本后补全翻译）
+      return Object.keys(det).length ? `${what} ${JSON.stringify(det).slice(0, 160)}` : what;
+  }
+}
+
+/* 用时：MAA 桌面端「任务已全部完成! 用时 0h46m」同款 */
+function fmtDuration(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}h${String(m).padStart(2, '0')}m`;
+  if (m > 0) return `${m}m${String(s).padStart(2, '0')}s`;
+  return `${s}s`;
+}
+
 function onCallback(msg, detailsJson) {
   let parsedForSub = null;
   try { parsedForSub = JSON.parse(detailsJson || '{}'); } catch { parsedForSub = {}; }
@@ -163,15 +223,18 @@ function onCallback(msg, detailsJson) {
   const chain = (d.details && (d.details.taskchain || d.details.chain)) || d.taskchain || '';
   try {
     switch (msg) {
-      case MSG_ALL_TASKS_COMPLETED:
+      case MSG_ALL_TASKS_COMPLETED: {
+        // MAA 桌面端收尾文案：任务已全部完成! 用时 0h46m
+        const used = state.startedAt ? fmtDuration(Date.now() - state.startedAt) : '';
         state.phase = state.lastChainError ? 'error' : 'done';
         state.detail = state.lastChainError
-          ? `全部任务结束（有任务链失败: ${state.lastChainError}）`
-          : '全部任务完成';
+          ? `全部任务结束（有任务链失败: ${state.lastChainError}）${used ? ' · 用时 ' + used : ''}`
+          : `任务已全部完成!${used ? ' 用时 ' + used : ''}`;
         state.finishedAt = Date.now();
         logger.info('runner', state.detail);
         teardown(2000);
         break;
+      }
       case MSG_INIT_FAILED:
         // 实例初始化失败（资源缺失、连接不可用等），之前被误当成「全部完成」
         state.phase = 'error';
@@ -180,11 +243,19 @@ function onCallback(msg, detailsJson) {
         logger.error('runner', `MaaCore 初始化失败: ${d.what || ''} ${d.why || ''}`);
         teardown(2000);
         break;
-      case MSG_CONNECTION_INFO:
+      case MSG_CONNECTION_INFO: {
+        // MAA 桌面端也不会把 ScreencapCost / EmulatorFPS 这类心跳刷进运行实况，
+        // 只保留有信息量的连接里程碑。
+        const noisy = ['ScreencapCost', 'EmulatorFPS'];
+        if (noisy.includes(String(d.what))) {
+          logger.debug('runner', `连接信息（心跳）: ${d.what}`);
+          break;
+        }
         logger.info('runner', `连接信息: ${d.what || ''} ${d.why || ''}`.trim());
         if (d.what) state.detail = String(d.what);
         if (String(d.what).toLowerCase() === 'connected') connectedNotifiedAt = Date.now();
         break;
+      }
       case MSG_TASK_CHAIN_ERROR:
         // 一条链失败不代表全部失败：MaaCore 会继续执行后续链（真机实测
         // StartUp 失败后 Fight 照常开始）。这里只记录，不 teardown；
@@ -213,6 +284,24 @@ function onCallback(msg, detailsJson) {
         const sd = d.details || {};
         logger.warn('runner',
           `子任务出错: ${sd.subtask || sd.what || d.what || '?'} · ${sd.why || d.why || ''} chain=${chain} · details=${detailsJson}`);
+        break;
+      }
+      case MSG_SUBTASK_START:
+        // ProcessTask 每次点击都会发，进运行实况会刷屏 → 只进详细日志
+        logger.debug('runner', `子任务开始: ${(d.details && d.details.task) || d.subtask || ''} (${d.subtask || ''})`);
+        break;
+      case MSG_SUBTASK_COMPLETED:
+        logger.debug('runner', `子任务完成: ${(d.details && d.details.task) || d.subtask || ''} (${d.subtask || ''})`);
+        break;
+      case MSG_SUBTASK_EXTRA_INFO: {
+        // 运行实况的主体：理智、刷关次数、掉落、当前设施等
+        const text = describeSubTaskExtra(d);
+        if (text) {
+          logger.info('runner', text);
+          state.detail = text;
+        } else {
+          logger.debug('runner', `子任务额外信息: ${d.what || ''}`);
+        }
         break;
       }
       default:
