@@ -1104,3 +1104,11 @@ body {
 .mdw-open-chip.daily { border-color: var(--mdw-accent); color: var(--mdw-accent); }
 [data-theme="dark"] .mdw-open-today { background: #323232; }
 [data-theme="dark"] .mdw-open-chip { background: #2b2b2b; }
+
+/* 示例数据提示条：工具页在未识别过、展示固定样例内容时的标注 */
+.mdw-demo-note {
+  padding: 8px 12px; margin-bottom: 12px; font-size: 12.5px; line-height: 1.5;
+  border: 1px solid var(--mdw-border); border-left: 3px solid #f5a623;
+  border-radius: 6px; background: var(--mdw-card-2); color: var(--mdw-text);
+}
+[data-theme="dark"] .mdw-demo-note { background: #323232; }

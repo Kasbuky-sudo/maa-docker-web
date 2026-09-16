@@ -87,8 +87,8 @@ function isRunning() { return RUNNING_PHASES.indexOf(RT.phase) >= 0; }
 var DEVICE = {
   get connected() { return !!RT.connected; },
   set connected(v) { RT.connected = !!v; },
-  address: '192.168.31.190:5555',
-  maaVersion: 'v6.17.5',
+  address: '',        // 真实值由 /api/runner/status 与 /api/connection 覆盖
+  maaVersion: '',
 };
 Object.defineProperty(window, 'RUNNING', { get: isRunning });
 
@@ -2446,15 +2446,7 @@ var COPILOT_TAB_CFG = {
   other:  { autoSquad: true, multi: true, loop: true, autoSquadDisabled: true }
 };
 
-/* 作业文件树（mock：正式版从服务端 resource/copilot 目录读取） */
-var COPILOT_FILES = [
-  { name: 'OF-1_credit_fight.json', stage: 'OF-1' },
-  { name: '沃尔岗山丘_Spier_Foothills.json', stage: 'Spier_Foothills' },
-  { name: '日达诺夫园区.json', stage: 'NV-1' },
-  { name: '荒废灯塔_abandoned_lighthouse.json', stage: 'abandoned_lighthouse' },
-  { name: '雷神工业测试平台_Raythean_Industries_Test_Platform.json', stage: 'Raythean_Industries_Test_Platform' },
-  { name: 'ddd.json', stage: '1-7' }
-];
+/* 作业列表来自服务端 GET /api/copilot/list（见下方 COPILOT_JOBS），此处不再保留本地样本。 */
 
 var COPILOT_TIP = [
   '按界面开始后，若使用「多作业模式」，请从队列列表「等级/编号」页签点击右键，然后可以进行（包括批量）操作。',
@@ -2817,7 +2809,6 @@ var TOOLS_TABS = [
   ['resource', '资源更新']
 ];
 
-/* 各工具状态（原型 mock，正式版由 /api/tools/* 与 MaaCore 回调填充） */
 /* 识别结果（GET /api/tools/results，由 MaaCore 回调填充） */
 var TOOL_RESULTS = { recruit: null, depot: null, operbox: null, busy: false, lastError: null, lastTask: null };
 var TOOL_POLL = null;
@@ -2928,19 +2919,24 @@ function mockPotential(name) {
   for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 997;
   return 1 + (h % 6);
 }
+function mockBanner(text) {
+  return '<div class="mdw-demo-note">示例数据 · ' + esc(text) + '</div>';
+}
+
 var NEW_OPS = ['正义骑士号', 'Friston-3', 'Castle-3'];
 
 function toolsRecruitContent() {
   var real = TOOL_RESULTS.recruit;
   if (real) return toolsRecruitReal(real);
   var st = TOOL_STATE.recruit;
+  var demoNote = mockBanner('还没有识别过公招标签，下面是固定的示例内容。点上方「开始识别」读取真实画面。');
   var groups = st.detected.map(function (tag) {
     var ops = recruitOpsForTag(tag).slice().sort(function (a, b) { return b.r - a.r; });
     return { tag: tag, star: recruitGuaranteedRarity(tag), ops: ops };
   }).sort(function (a, b) { return b.star - a.star; });
 
-  var body =
-    '<div class="mdw-rc-result">识别结果: ' +
+  var body = demoNote +
+    '<div class="mdw-rc-result">识别结果（示例）: ' +
       st.detected.map(function (t) { return '<span class="mdw-rc-tag">' + esc(t) + '</span>'; }).join('') +
     '</div>' +
     groups.map(function (g) {
@@ -2948,7 +2944,7 @@ function toolsRecruitContent() {
         '<div class="mdw-rc-group-head">' + g.star + '★ Tags: <span class="mdw-rc-group-tag">' + esc(g.tag) + '</span></div>' +
         '<div class="mdw-rc-ops">' + g.ops.map(function (o) {
           var isNew = NEW_OPS.indexOf(o.n) >= 0;
-          var mark = isNew ? '(!!! NEW !!!)' : '(' + (mockPotential(o.n) >= 6 ? 'MAX' : mockPotential(o.n)) + ')';
+          var mark = isNew ? '(NEW)' : '';   // 潜力属账号数据，未识别前不编造
           return '<span class="mdw-rc-op r' + o.r + (isNew ? ' is-new' : '') + '">' + esc(o.n) +
             '<span class="mdw-rc-op-mark">' + esc(mark) + '</span></span>';
         }).join('') + '</div>' +
@@ -3023,9 +3019,10 @@ function toolsOperatorContent() {
       else owned.push({ n: n, r: r });
     });
   });
+  var demoNote = mockBanner('还没有识别过干员信息，下面是固定的示例内容。点上方「开始识别」读取真实数据。');
   var body =
-    toolNotice('operbox') +
-    '<div class="mdw-op-head">识别完成 特别关注会影响干员识别准确率，如有特别关注干员识别错误请自行判断。</div>' +
+    toolNotice('operbox') + demoNote +
+    '<div class="mdw-op-head">示例数据 · 特别关注会影响干员识别准确率，如有特别关注干员识别错误请自行判断。</div>' +
     '<div class="mdw-op-counters">' +
       '<span class="mdw-op-counter">未拥有: ' + missingN + '</span>' +
       '<span class="mdw-op-counter">已拥有: ' + owned.length + '</span>' +
@@ -3056,9 +3053,10 @@ function toolsDepotContent() {
   var real = TOOL_RESULTS.depot;
   if (real && (real.items || []).length) return toolsDepotReal(real);
   var st = TOOL_STATE.depot;
+  var demoNote = mockBanner('还没有识别过仓库，下面是固定的示例内容。点上方「开始识别」读取真实数据。');
   var body =
-    toolNotice('depot') +
-    '<div class="mdw-op-head">识别完成</div>' +
+    toolNotice('depot') + demoNote +
+    '<div class="mdw-op-head">示例数据</div>' +
     '<div class="mdw-depot-grid2">' + MAA_DEPOT_ITEMS.map(function (it) {
       return '<div class="mdw-depot-card2">' +
         '<div class="mdw-depot-icon2">' + esc(String(it[1]).slice(0, 1)) + '</div>' +
