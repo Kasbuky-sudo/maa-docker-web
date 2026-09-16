@@ -476,8 +476,9 @@ function collectTaskConfig() {
   return valid;
 }
 
-function saveTaskConfig() {
-  if (BACKEND.online === false) return;
+/* 构造要整体 PUT 的配置（深合并已存值），供定时保存与离开页面时的同步保存共用 */
+function buildSavePayload() {
+  if (BACKEND.online === false) return null;
   var current = collectTaskConfig();
   var payload = {};
   Object.keys(TASK_CFG || {}).forEach(function (k) { payload[k] = TASK_CFG[k]; });
@@ -488,6 +489,12 @@ function saveTaskConfig() {
     if (k === '_meta') { payload[k] = current[k]; return; }
     payload[k] = Object.assign({}, TASK_CFG[k] || {}, current[k]);
   });
+  return payload;
+}
+
+function saveTaskConfig() {
+  var payload = buildSavePayload();
+  if (!payload) return;
   TASK_CFG = payload;
   PUT('/api/tasks/config', payload).then(function () {
     var ind = document.getElementById('save-ind');
@@ -500,8 +507,33 @@ function saveTaskConfig() {
 
 function scheduleSave() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveTaskConfig, 600);
+  saveTimer = setTimeout(saveTaskConfig, 400);
 }
+
+/* 改完立刻刷新/切走会丢配置：防抖还没落盘页面就没了。
+   离开页面或切到后台时立刻把当前值同步写出去（keepalive 保证请求发出）。 */
+function flushSave() {
+  clearTimeout(saveTimer);
+  if (BACKEND.online === false) return;
+  if (typeof TASK_CFG === 'undefined' || !document.getElementById('task-config')) return;
+  try {
+    var payload = buildSavePayload();
+    if (!payload) return;
+    TASK_CFG = payload;
+    fetch('/api/tasks/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      keepalive: true,
+    }).catch(function () { /* 页面正在卸载，失败也无所谓 */ });
+  } catch (e) { /* ignore */ }
+}
+
+window.addEventListener('beforeunload', flushSave);
+window.addEventListener('pagehide', flushSave);
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState === 'hidden') flushSave();
+});
 
 /* 把服务端配置回填到控件（渲染后调用） */
 function applyTaskConfig(root) {
@@ -1672,8 +1704,12 @@ function loadHomeData() {
     setText('home-maa-version', i.maaVersion || '—');
   }).catch(function () {});
   GET('/api/runtime/status').then(function (r) {
-    setText('home-res-version', r.ready ? (r.maaVersion || '已就绪') : (r.phase || '未就绪'));
-    setText('home-maa-version', r.maaVersion || document.getElementById('home-maa-version').textContent);
+    // 注意：这个接口给的是 status 字段（"ready"），不是 ready 布尔。
+    // 读 r.ready 会永远为假 → 资源版本被写成「未就绪」（真机反馈：
+    // 一连接就变未就绪）。下面 /api/resources/info 会用更准的结果覆盖它。
+    var ready = r.status === 'ready' || r.ready === true;
+    setText('home-res-version', ready ? (r.maaVersion || '已就绪') : (r.status || r.phase || '未就绪'));
+    if (r.maaVersion) setText('home-maa-version', r.maaVersion);
   }).catch(function () {});
   GET('/api/resources/info').then(function (r) {
     if (!r) return;
