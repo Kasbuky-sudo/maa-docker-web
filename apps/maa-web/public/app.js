@@ -558,7 +558,12 @@ function pollConnectTest(btn, label) {
       return;
     }
     if (btn) { btn.disabled = false; btn.textContent = RT.connected ? '断开' : (label || '连接'); }
-    if (ct.ok === true) openInfoModal('连接测试成功', ct.detail || ('已连接 ' + (ct.address || RT.address)));
+    if (ct.ok === true) {
+      var res = ct.resolution || {};
+      var extra = res.width ? '\n设备分辨率：' + res.width + 'x' + res.height +
+        (res.ratioOk ? '（16:9 ✓）' : '（非 16:9 ✗）') : '';
+      openInfoModal('连接测试成功', (ct.detail || ('已连接 ' + (ct.address || RT.address))) + extra);
+    }
     else if (ct.ok === false) openInfoModal('连接测试失败', ct.detail || '连接失败，请检查 ADB 地址与网络。');
     refreshRunnerStatus();
   });
@@ -3321,6 +3326,24 @@ function bindSettingsEvents(el) {
     }, 1200);
   });
 
+  var resBtn = el.querySelector('#cs-resolution');
+  if (resBtn) resBtn.addEventListener('click', function () {
+    var msg = el.querySelector('#cs-resolution-msg');
+    saveConnection();
+    resBtn.disabled = true;
+    if (msg) msg.textContent = '检测中…';
+    GET('/api/device/resolution').then(function (r) {
+      if (!msg) return;
+      if (r.error) { msg.textContent = '失败：' + r.error; return; }
+      var line = r.width + 'x' + r.height + (r.source === 'override' ? '（覆盖）' : '') +
+        (r.ratioOk ? ' · 16:9 ✓' : ' · 非 16:9 ✗');
+      msg.textContent = line;
+      if (r.warning) openInfoModal('分辨率提示', r.warning);
+    }).catch(function (e) {
+      if (msg) msg.textContent = '失败：' + e.message;
+    }).then(function () { resBtn.disabled = false; });
+  });
+
   var upCheck = el.querySelector('#up-check');
   if (upCheck) upCheck.addEventListener('click', function () { openRuntimeUpdateModal(upCheck); });
   var upVerify = el.querySelector('#up-verify');
@@ -3353,6 +3376,10 @@ function renderSettingsBody() {
       settingsRow('连接配置', 'MAA Core 内置识别与截图策略', selectHtml(CONN_CONFIGS, CONNECTION.config || 'General', 'cs-config')) +
       settingsRow('触控模式', '实例级参数 AsstSetInstanceOption(TouchMode)', selectHtml(TOUCH_MODES, CONNECTION.touchMode || 'minitouch', 'cs-touchMode')) +
       settingsRow('客户端类型', '与当前账号和资源包保持一致', selectHtml(CLIENTS, CONNECTION.clientType || 'Official', 'cs-clientType')) +
+      '<div class="mdw-settings-row"><div><div class="mdw-settings-label">设备分辨率</div>' +
+      '<div class="mdw-settings-desc">MAA 要求 16:9（内部缩放到 1280×720 做模板匹配）；720p 以下识别不稳定</div></div>' +
+      '<div class="mdw-settings-ctl"><button type="button" class="app-btn" id="cs-resolution">检测分辨率</button>' +
+      '<span class="mdw-muted" id="cs-resolution-msg"></span></div></div>' +
       '<div class="mdw-settings-row"><div><div class="mdw-settings-label">连接测试</div><div class="mdw-settings-desc">加载资源并尝试连接设备（AsstAsyncConnect）</div></div>' +
       '<div class="mdw-settings-ctl"><button type="button" class="app-btn mdw-btn-primary" id="cs-test">测试连接</button><span class="mdw-muted" id="cs-msg"></span></div></div>' +
     '</div>';

@@ -503,6 +503,39 @@ function stop() {
 }
 
 // Probe an ADB device without appending tasks: load resources, connect, disconnect.
+/**
+ * 设备分辨率探测（adb shell wm size）。
+ * MAA 的硬性要求是 16:9（会内部缩放到 1280×720 做模板匹配）；
+ * 720p 只是推荐下限，高于 720p 也能用（只是截图/缩放更耗资源）。
+ */
+function probeResolution(adbPath, address) {
+  return new Promise((resolve) => {
+    const { spawn } = require('node:child_process');
+    const p = spawn(adbPath, ['-s', address, 'shell', 'wm', 'size'], { timeout: 10000 });
+    let out = '';
+    p.stdout.on('data', (c) => { out += String(c); });
+    p.stderr.on('data', (c) => { out += String(c); });
+    p.on('error', (e) => resolve({ error: 'adb 启动失败: ' + e.message }));
+    p.on('close', () => {
+      const override = /Override size:\s*(\d+)x(\d+)/.exec(out);
+      const physical = /Physical size:\s*(\d+)x(\d+)/.exec(out);
+      let w = null, h = null, source = 'physical';
+      if (override) { w = +override[1]; h = +override[2]; source = 'override'; }
+      else if (physical) { w = +physical[1]; h = +physical[2]; }
+      if (!w || !h) { resolve({ error: '无法解析 wm size 输出', raw: out.slice(0, 120) }); return; }
+      const ratioOk = Math.abs(w / h - 16 / 9) < 0.02;
+      let warning = null;
+      if (!ratioOk) {
+        warning = `分辨率 ${w}x${h} 不是 16:9，MAA 模板识别会失败。` +
+          `可执行 adb shell wm size ${h}x${Math.round(h * 16 / 9)} 设置覆盖分辨率`;
+      } else if (h < 720) {
+        warning = `分辨率 ${w}x${h} 低于 720p，识别可能不稳定`;
+      }
+      resolve({ width: w, height: h, source, ratioOk, warning });
+    });
+  });
+}
+
 /* 立即返回（{started:true}），真正的连接在后台跑，结果看 status.connectTest */
 function testConnect() {
   if (connectTest.running) return { started: true, alreadyRunning: true, address: connectTest.address };
@@ -538,11 +571,22 @@ async function runConnectTest() {
     await ensureSession(f, dir, conn, conn.adbPath || '/usr/bin/adb');
     const ms = Date.now() - started;
     logger.info('runner', `连接测试成功: ${conn.address} (${ms} ms)`);
+    // 分辨率体检：非 16:9 会在识别环节翻车，趁连接还在时提醒
+    let resolution = null;
+    try {
+      resolution = await probeResolution(conn.adbPath || '/usr/bin/adb', conn.address);
+      if (resolution.warning) {
+        logger.warn('runner', `分辨率提示: ${resolution.warning}`);
+        connectTest.detail = `连接成功（${ms} ms）· ${resolution.warning}`;
+      }
+    } catch { /* 探测失败不影响连接结果 */ }
     connectTest = {
-      running: false, ok: true, detail: `连接成功（${ms} ms）· 会话已保持`,
+      running: false, ok: true, detail: `连接成功（${ms} ms）· 会话已保持` +
+        (resolution && resolution.warning ? ' · ' + resolution.warning : ''),
       address: conn.address, ms, startedAt: connectTest.startedAt, finishedAt: Date.now(),
+      resolution,
     };
-    return { ok: true, address: conn.address, ms, maaVersion: f.getVersion() };
+    return { ok: true, address: conn.address, ms, maaVersion: f.getVersion(), resolution };
   } catch (e) {
     logger.warn('runner', `连接测试失败: ${e.message}`);
     connectTest = {
@@ -656,4 +700,4 @@ async function runConnectTest() {
   }
 }
 
-module.exports = { snapshot, start, stop, testConnect, runTask, onMessage, connectTestState: () => ({ ...connectTest }), busy, buildParams, _resetForTest: () => { state = { phase: 'idle', detail: '', tasks: [], startedAt: null, finishedAt: null }; } };
+module.exports = { snapshot, start, stop, testConnect, runTask, onMessage, probeResolution, connectTestState: () => ({ ...connectTest }), busy, buildParams, _resetForTest: () => { state = { phase: 'idle', detail: '', tasks: [], startedAt: null, finishedAt: null }; } };

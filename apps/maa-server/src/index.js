@@ -217,6 +217,13 @@ const routes = {
     };
   },
 
+  /* ---- 设备分辨率探测（wm size）+ 16:9 / 720p 提示 ---- */
+  async 'GET /api/device/resolution'() {
+    const conn = (runner.snapshot() || {}).connection || {};
+    if (!conn.address) throw Object.assign(new Error('尚未配置设备地址'), { statusCode: 409 });
+    return runner.probeResolution(conn.adbPath || '/usr/bin/adb', conn.address);
+  },
+
   /* ---- 设备截图：ADB screencap，直接返回 PNG（监控 / 实时画面用） ----
    * 串行执行：先 connect（容器重启后 adb server 需要重新拉起并注册设备），
    * 再 screencap；screencap 失败时重试一轮。 */
