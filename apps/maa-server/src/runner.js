@@ -75,6 +75,33 @@ function ensureResource(f, dir) {
  * 取得一个「已连接」的 MaaCore 会话：能用就复用，不能用才重建。
  * 复用可以让「连接测试」的成功状态延续到「开始任务」，省掉重复的 60s 握手。
  */
+/**
+ * 幂等的 adb connect（容器重启后设备未注册 / adb server 冷启动时必需）。
+ * 返回 {connected, out}；失败不抛，交给 MaaCore 自己报错。
+ */
+function adbPreconnect(adbPath, address) {
+  return new Promise((resolve) => {
+    if (!address) { resolve({ connected: false, out: 'no address' }); return; }
+    const { spawn } = require('node:child_process');
+    const runOnce = () => new Promise((done) => {
+      const p = spawn(adbPath, ['connect', address], { timeout: 15000 });
+      let out = '';
+      p.stdout.on('data', (c) => { out += String(c); });
+      p.stderr.on('data', (c) => { out += String(c); });
+      p.on('error', (e) => done({ out: out || e.message }));
+      p.on('close', () => done({ out }));
+    });
+    (async () => {
+      let r = await runOnce();
+      // 冷启动时第一次常常是 "cannot connect" / 空输出，重试一轮
+      if (!/connected to|already connected/i.test(r.out)) r = await runOnce();
+      const ok = /connected to|already connected/i.test(r.out);
+      logger.info('runner', `adb connect ${address}: ${ok ? '已就绪' : '未成功（交给 MaaCore）'}`);
+      resolve({ connected: ok, out: (r.out || '').trim().slice(0, 200) });
+    })();
+  });
+}
+
 async function ensureSession(f, dir, conn, adbPath, waitMs = 90000) {
   if (session && session.address === conn.address) {
     let ok = false;
@@ -85,6 +112,11 @@ async function ensureSession(f, dir, conn, adbPath, waitMs = 90000) {
     }
   }
   if (session) teardown(0);
+
+  // MAA 的异步握手不会自己 adb connect：容器重启或长时间空闲后，容器内 adb
+  // 设备表是空的，MaaCore 会干等到 60s 超时才转而成功（实测 61s vs 1.1s）。
+  // 先做一次幂等的 adb connect，握手就能稳定在 1~2 秒。
+  await adbPreconnect(adbPath, conn.address);
 
   ensureResource(f, dir);
   const cbRef = maaCore.registerCallback((msg, details, arg) => onCallback(msg, details, arg));
@@ -101,10 +133,9 @@ async function ensureSession(f, dir, conn, adbPath, waitMs = 90000) {
       const ok = f.setInstanceOption(handle, 2, String(conn.touchMode));
       logger.info('runner', `触控模式设为 ${conn.touchMode}（${ok ? '成功' : '未接受'}）`);
     }
-    if (conn.clientType && f.setInstanceOption) {
-      f.setInstanceOption(handle, 6, String(conn.clientType));
-    }
-  } catch (e) {
+    // 注意：ClientType 不是实例级参数（InstanceOptionKey 里没有它），
+    // 它是任务参数，由 buildParams 下发到 StartUp/Fight/CloseDown。
+    } catch (e) {
     logger.warn('runner', `设置实例选项失败: ${e.message}`);
   }
 
