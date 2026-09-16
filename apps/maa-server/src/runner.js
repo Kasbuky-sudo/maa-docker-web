@@ -511,18 +511,29 @@ function stop() {
 function probeResolution(adbPath, address) {
   return new Promise((resolve) => {
     const { spawn } = require('node:child_process');
-    const p = spawn(adbPath, ['-s', address, 'shell', 'wm', 'size'], { timeout: 10000 });
-    let out = '';
-    p.stdout.on('data', (c) => { out += String(c); });
-    p.stderr.on('data', (c) => { out += String(c); });
-    p.on('error', (e) => resolve({ error: 'adb 启动失败: ' + e.message }));
-    p.on('close', () => {
-      const override = /Override size:\s*(\d+)x(\d+)/.exec(out);
-      const physical = /Physical size:\s*(\d+)x(\d+)/.exec(out);
+    const run = (args, timeout) => new Promise((resolve2) => {
+      const p = spawn(adbPath, args, { timeout: timeout || 10000 });
+      let out = '';
+      p.stdout.on('data', (c) => { out += String(c); });
+      p.stderr.on('data', (c) => { out += String(c); });
+      p.on('error', (e) => resolve2({ code: -1, out: out || e.message }));
+      p.on('close', (code) => resolve2({ code, out }));
+    });
+
+    (async () => {
+      // 容器重启后 adb server 冷启动 + 设备未注册：先 connect（幂等）再查询
+      await run(['connect', address], 8000);
+      let r = await run(['-s', address, 'shell', 'wm', 'size'], 10000);
+      if (!/size:\s*\d+x\d+/.test(r.out)) {              // daemon 冷启动或设备掉了 → 重试一轮
+        await run(['connect', address], 8000);
+        r = await run(['-s', address, 'shell', 'wm', 'size'], 10000);
+      }
+      const override = /Override size:\s*(\d+)x(\d+)/.exec(r.out);
+      const physical = /Physical size:\s*(\d+)x(\d+)/.exec(r.out);
       let w = null, h = null, source = 'physical';
       if (override) { w = +override[1]; h = +override[2]; source = 'override'; }
       else if (physical) { w = +physical[1]; h = +physical[2]; }
-      if (!w || !h) { resolve({ error: '无法解析 wm size 输出', raw: out.slice(0, 120) }); return; }
+      if (!w || !h) { resolve({ error: '无法读取设备分辨率（设备未连接？）', raw: r.out.slice(0, 120) }); return; }
       const ratioOk = Math.abs(w / h - 16 / 9) < 0.02;
       let warning = null;
       if (!ratioOk) {
@@ -532,7 +543,7 @@ function probeResolution(adbPath, address) {
         warning = `分辨率 ${w}x${h} 低于 720p，识别可能不稳定`;
       }
       resolve({ width: w, height: h, source, ratioOk, warning });
-    });
+    })();
   });
 }
 
