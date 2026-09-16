@@ -93,18 +93,23 @@ function adbPreconnect(adbPath, address) {
     });
     (async () => {
       const t0 = Date.now();
-      await run(['start-server'], 8000);
-      // connect 本身在冷启动时会挂很久，超时放短、靠 devices 校验结果
-      await run(['connect', address], 8000);
-      // 关键：确认设备真的出现在 adb devices 里，否则 MaaCore 会自己干等 60s
-      let r = await run(['devices'], 8000);
-      let ok = new RegExp('^' + address.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s+device\\s*$', 'm').test(r.out || '');
-      if (!ok) {
-        await run(['connect', address], 8000);
-        r = await run(['devices'], 8000);
-        ok = new RegExp('^' + address.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s+device\\s*$', 'm').test(r.out || '');
+      await run(['start-server'], 10000);
+      await run(['connect', address], 10000);
+      // 冷启动时 adb/设备要几十秒才响应；轮询确认设备真的进入 device 状态再
+      // 交棒给 MaaCore —— 否则 MaaCore 会自己干等到 60s 超时才发 Connected。
+      const esc = address.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const isDevice = (s) => new RegExp('^' + esc + '\\s+device\\s*$', 'm').test(s || '');
+      let r = await run(['devices'], 10000);
+      let ok = isDevice(r.out);
+      let waited = Date.now() - t0;
+      while (!ok && waited < 45000) {
+        await sleep(2000);
+        if (waited % 10000 < 2500) await run(['connect', address], 10000);
+        r = await run(['devices'], 10000);
+        ok = isDevice(r.out);
+        waited = Date.now() - t0;
       }
-      logger.info('runner', `adb 预连 ${address}: ${ok ? '设备已就绪' : '未就绪（交给 MaaCore）'}（${Date.now() - t0} ms）`);
+      logger.info('runner', `adb 预连 ${address}: ${ok ? '设备已就绪' : '未就绪（交给 MaaCore）'}（${waited} ms）`);
       resolve({ connected: ok, out: (r.out || '').trim().slice(0, 200) });
     })();
   });
