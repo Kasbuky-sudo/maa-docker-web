@@ -36,6 +36,23 @@ var GET = function (p) { return api('GET', p); };
 var PUT = function (p, b) { return api('PUT', p, b); };
 var POST = function (p, b) { return api('POST', p, b); };
 
+var timeoutReminded = false;
+
+/* 任务超时提醒：运行时长超过 _meta.timeoutRemind（分钟）时弹窗一次 */
+function checkTimeoutReminder() {
+  var minutes = TASK_CFG && TASK_CFG._meta && Number(TASK_CFG._meta.timeoutRemind);
+  if (!minutes || minutes <= 0) return;
+  if (!isRunning() || !RT.startedAt) { timeoutReminded = false; return; }
+  if (timeoutReminded) return;
+  var elapsed = Date.now() - RT.startedAt;
+  if (elapsed >= minutes * 60000) {
+    timeoutReminded = true;
+    var mins = Math.floor(elapsed / 60000);
+    openInfoModal('任务超时提醒', '当前任务已运行 ' + mins + ' 分钟（超过设定的 ' + minutes + ' 分钟提醒阈值）。\n如果这不是预期内时长，请检查任务配置或设备状态。');
+    console.log('[timeout-remind]', mins, 'minutes');
+  }
+}
+
 function markOnline(ok, err) {
   var was = BACKEND.online;
   BACKEND.online = ok;
@@ -59,7 +76,7 @@ function renderOfflineBanner() {
 /* ===== 运行时状态（/api/runner/status 驱动，替代原 DEVICE/RUNNING mock） ===== */
 var RT = {
   phase: 'idle', detail: '', connected: false, address: '',
-  maaVersion: '', maaOk: false, postAction: 'None',
+  maaVersion: '', maaOk: false, postAction: 'None', startedAt: null,
   connectTest: { running: false, ok: null, detail: '', address: '', ms: null },
 };
 var RUNNING_PHASES = ['loading', 'connecting', 'running', 'stopping'];
@@ -139,6 +156,8 @@ function refreshRunnerStatus() {
     RT.maaOk = !!(s.maa && s.maa.ok);
     RT.maaVersion = s.maaVersion || RT.maaVersion;
     RT.connectTest = s.connectTest || RT.connectTest;
+    RT.startedAt = s.startedAt || null;
+    checkTimeoutReminder();
     if (RT.address) DEVICE.address = RT.address;
     updateDeviceChip();
     syncRuntimeUI();
@@ -370,7 +389,11 @@ function collectTaskConfig() {
   if (themes.length) { out.switchtheme = out.switchtheme || {}; out.switchtheme.themes = themes; }
   // 队列级
   var post = document.getElementById('q-post');
-  out._meta = { postAction: post ? post.value : (TASK_CFG._meta && TASK_CFG._meta.postAction) || 'None' };
+  var timeoutInput = document.getElementById('q-timeout');
+  out._meta = {
+    postAction: post ? post.value : (TASK_CFG._meta && TASK_CFG._meta.postAction) || 'None',
+    timeoutRemind: timeoutInput ? Math.max(0, Number(timeoutInput.value) || 0) : (TASK_CFG._meta && TASK_CFG._meta.timeoutRemind) || 0,
+  };
   // 只保留 catalog 里存在的任务 id
   var valid = {};
   (CATALOG ? CATALOG.tasks : []).forEach(function (t) { if (out[t.id]) valid[t.id] = out[t.id]; });
@@ -461,6 +484,8 @@ function applyTaskConfig(root) {
   // 队列级
   var post = document.getElementById('q-post');
   if (post && TASK_CFG._meta && TASK_CFG._meta.postAction) post.value = TASK_CFG._meta.postAction;
+  var to = document.getElementById('q-timeout');
+  if (to && TASK_CFG._meta && TASK_CFG._meta.timeoutRemind != null) to.value = TASK_CFG._meta.timeoutRemind;
 }
 
 /* 「任何改动 → 防抖保存」
@@ -662,6 +687,46 @@ var STAGES = [
 ];
 /* 指定材料：官方 resource/item_index.json 中 classifyType=MATERIAL 的 95 项 */
 var MATERIALS = [['', '不选择']].concat(MAA_ITEMS.materials);
+/* 每日开放关卡（PRTS「关卡一览/资源收集」，常年稳定） */
+var STAGE_ROTATION = {
+  mon: [
+    ['AP-5', '粉碎防御（采购凭证）'], ['SK-5', '资源保障（加固建材）'],
+    ['PR-A-2', '固若金汤（重装/医疗芯片）'], ['PR-B-2', '摧枯拉朽（术师/狙击芯片）']
+  ],
+  tue: [
+    ['CE-6', '货物运送（龙门币）'], ['CA-5', '空中威胁（技巧概要）'],
+    ['PR-B-2', '摧枯拉朽（术师/狙击芯片）'], ['PR-D-2', '身先士卒（近卫/特种芯片）']
+  ],
+  wed: [
+    ['SK-5', '资源保障（加固建材）'], ['CA-5', '空中威胁（技巧概要）'],
+    ['PR-C-2', '势不可挡（先锋/辅助芯片）'], ['PR-D-2', '身先士卒（近卫/特种芯片）']
+  ],
+  thu: [
+    ['AP-5', '粉碎防御（采购凭证）'], ['CE-6', '货物运送（龙门币）'], ['CA-5', '空中威胁（技巧概要）'],
+    ['PR-A-2', '固若金汤（重装/医疗芯片）'], ['PR-C-2', '势不可挡（先锋/辅助芯片）']
+  ],
+  fri: [
+    ['SK-5', '资源保障（加固建材）'], ['CA-5', '空中威胁（技巧概要）'],
+    ['PR-A-2', '固若金汤（重装/医疗芯片）'], ['PR-B-2', '摧枯拉朽（术师/狙击芯片）'],
+    ['PR-C-2', '势不可挡（先锋/辅助芯片）']
+  ],
+  sat: [
+    ['CE-6', '货物运送（龙门币）'], ['AP-5', '粉碎防御（采购凭证）'], ['SK-5', '资源保障（加固建材）'],
+    ['PR-B-2', '摧枯拉朽（术师/狙击芯片）'], ['PR-C-2', '势不可挡（先锋/辅助芯片）'],
+    ['PR-D-2', '身先士卒（近卫/特种芯片）']
+  ],
+  sun: [
+    ['CE-6', '货物运送（龙门币）'], ['AP-5', '粉碎防御（采购凭证）'], ['SK-5', '资源保障（加固建材）'],
+    ['CA-5', '空中威胁（技巧概要）'], ['PR-A-2', '固若金汤（重装/医疗芯片）'],
+    ['PR-B-2', '摧枯拉朽（术师/狙击芯片）'], ['PR-D-2', '身先士卒（近卫/特种芯片）']
+  ]
+};
+
+function todayOpenStages() {
+  var keys = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+  return (STAGE_ROTATION[keys[new Date().getDay()]] || []).slice();
+}
+
 var POST_ACTIONS = [
   ['None', '无操作'], ['BackToHome', '返回 模拟器 主屏幕'], ['ExitGame', '退出 明日方舟'],
   ['ExitEmulator', '退出 模拟器'], ['ExitMAA', '退出 MAA'], ['Sleep', '睡眠'],
@@ -730,7 +795,13 @@ var configJaomie = null;
 /* --- 理智作战 --- */
 function configFight(tab) {
   if (tab === 'basic') {
-    return headingHtml('理智作战') +
+    var open = todayOpenStages();
+  return headingHtml('理智作战') +
+    '<div class="mdw-open-today"><span class="mdw-open-title">今日开放</span>' +
+      '<span class="mdw-open-chip daily">LS-6 作战记录</span>' +
+      open.map(function (o) { return '<span class="mdw-open-chip">' + esc(o[0]) + ' ' + esc(o[1]) + '</span>'; }).join('') +
+      '<span class="mdw-open-chip">剿灭委托（每周重置）</span>' +
+    '</div>' +
       rowHtml(checkHtml('使用药剂', true, 'f-medicine') + helpHtml('使用恢复理智的药剂。') + numHtml('f-medicine-num', 999, 0, 999)) +
       rowHtml(checkHtml('使用源石 *', false, 'f-stone') + numHtml('f-stone-num', 0, 0, 999)) +
       rowHtml(checkHtml('指定次数', true, 'f-times') + numHtml('f-times-num', 999, 1, 9999)) +
@@ -751,12 +822,7 @@ function configFight(tab) {
     blockHtml('过期活动关卡重置为', selectHtml([['Current', '当前/上次'], ['NotSwitch', '不切换']], 'Current', 'f-expire-reset')) +
     rowHtml(checkHtml('使用备选关卡', false, 'f-alt-stage')) +
     '<div class="mdw-sub-row" id="f-alt-row" style="display:none"><span class="mdw-muted">备选 1</span>' + selectHtml(STAGES, '', 'f-alt-1') + '<span class="mdw-muted">备选 2</span>' + selectHtml(STAGES, '', 'f-alt-2') + '</div>' +
-    rowHtml(checkHtml('下拉框中隐藏当日不开放关卡', true, 'f-hide-closed')) +
-    rowHtml(checkHtml('启用周计划', false, 'f-weekly-plan') + helpHtml('展开周日~周六复选框，可指定每周运行日期。')) +
-    '<div class="mdw-week-box" id="f-week-box" style="display:none">' +
-      WEEKDAYS.map(function (w) {
-        return '<div class="mdw-week-row"><span>' + w[1] + '</span>' + selectHtml(STAGES, '1-7') + '</div>';
-      }).join('') + '</div>';
+    rowHtml(checkHtml('下拉框中隐藏当日不开放关卡', true, 'f-hide-closed'));
 }
 
 /* --- 信用收支 --- */
@@ -1521,6 +1587,9 @@ function pageTasks(el) {
             '<button type="button" class="app-btn" id="q-clear">清空</button>' +
             '<button type="button" class="app-btn" id="q-save">保存配置</button>' +
           '</div>' +
+          '<div class="mdw-queue-post"><span>超时提醒</span>' +
+            '<input type="number" class="app-input-text" id="q-timeout" min="0" max="720" step="5" value="' +
+            ((TASK_CFG._meta && TASK_CFG._meta.timeoutRemind) || 0) + '" title="任务运行超过该分钟数时弹窗提醒；0 = 不提醒"/><span>分</span></div>' +
           '<div class="mdw-queue-post"><span>完成后</span>' + selectHtml(POST_ACTIONS, 'None', 'q-post') + '</div>' +
           '<button type="button" class="app-btn mdw-btn-primary mdw-startbtn" id="q-start">Link Start!</button>' +
         '</div>' +
@@ -1549,6 +1618,7 @@ function renderTaskList() {
       '<input type="checkbox" class="app-checkbox mdw-qi-check" data-task="' + t.id + '"' + (defaultChecked.indexOf(t.id) >= 0 ? ' checked' : '') + '/>' +
       '<span class="mdw-qi-name" data-task="' + t.id + '">' + esc(t.name) + '</span>' +
       '<button type="button" class="mdw-qi-rename" data-task="' + t.id + '" title="重命名"></button>' +
+      '<button type="button" class="mdw-qi-copy" data-task="' + t.id + '" title="复制任务"></button>' +
       '<button type="button" class="mdw-qi-del" data-task="' + t.id + '" title="删除"></button>' +
     '</div>';
   }).join('');
@@ -1699,6 +1769,19 @@ function bindTaskEvents(el) {
         rTask.name = newName;
         rerenderList();
       });
+      return;
+    }
+    if (ev.target.classList.contains('mdw-qi-copy')) {
+      ev.stopPropagation();
+      var cId = ev.target.dataset.task;
+      var cTask = TASKS.find(function (t) { return t.id === cId; });
+      if (!cTask) return;
+      var newId = baseTaskId(cId) + '_' + Date.now();
+      var name = cTask.name.replace(/\s*副本\d*$/, '') + ' 副本';
+      TASKS.splice(TASKS.indexOf(cTask) + 1, 0, { id: newId, name: name, tabs: cTask.tabs });
+      rerenderList();
+      selectTask(newId);
+      saveTaskConfig();
       return;
     }
     if (ev.target.classList.contains('mdw-qi-drag')) return;
@@ -1879,7 +1962,11 @@ function bindConfigEvents(el) {
     };
     wpEn2.addEventListener('change', refreshWp);
     el.querySelectorAll('.mdw-wp-stages').forEach(function (inp) {
-      inp.addEventListener('input', refreshWp);
+      inp.addEventListener('input', function () {
+        // 输入时同步到 weeklyPlan，让「今天」提示实时反映
+        weeklyPlan[inp.dataset.day] = inp.value.split(/[,，;；\s]+/).map(function (x) { return x.trim(); }).filter(Boolean);
+        refreshWp();
+      });
     });
     refreshWp();
   }

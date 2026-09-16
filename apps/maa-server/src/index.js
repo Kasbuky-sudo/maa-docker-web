@@ -176,6 +176,10 @@ const routes = {
       const meta = {};
       const postActions = ['None', 'BackToHome', 'ExitGame', 'ExitEmulator', 'ExitMAA', 'Shutdown', 'Sleep', 'Hibernate'];
       if (postActions.includes(body._meta.postAction)) meta.postAction = body._meta.postAction;
+      // 任务超时提醒（分钟，0 = 不提醒）：前端据此在任务运行超时后弹窗
+      if (body._meta.timeoutRemind != null && !Number.isNaN(Number(body._meta.timeoutRemind))) {
+        meta.timeoutRemind = Math.max(0, Math.min(720, Number(body._meta.timeoutRemind)));
+      }
       if (Object.keys(meta).length) clean._meta = meta;
     }
     const file = path.join(config.CONFIG_DIR(), 'tasks.json');
