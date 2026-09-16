@@ -454,6 +454,18 @@ async function start(selectedTaskIds) {
     }));
   });
 
+  // Fight 任务没有 stage 时 MaaCore 无事可做（这正是「流程跑不动」的原因），明确跳过
+  const droppedFight = jobs.filter((j) => j.task.taskType === 'Fight' && !j.params.stage);
+  for (const j of droppedFight) {
+    logger.warn('runner', `理智作战未配置关卡（stage 为空），该任务已跳过。请在界面选择关卡或启用周计划`);
+  }
+  jobs = jobs.filter((j) => j.task.taskType !== 'Fight' || j.params.stage);
+  if (!jobs.length) {
+    throw Object.assign(
+      new Error('所选任务没有可执行内容：理智作战未配置关卡（请在理智作战面板选择「当前关卡」，或启用周计划）'),
+      { statusCode: 400 });
+  }
+
   state = { phase: 'loading', detail: '加载资源中', tasks: ids, startedAt: Date.now(), finishedAt: null };
   seq += 1;
 

@@ -759,19 +759,68 @@ var RECRUIT_TAGS = [
 ];
 
 /* ===== Global Config (shared, fixed at top) ===== */
+/* 截图测试：弹窗显示当前设备画面 */
+function openScreenshotModal() {
+  if (BACKEND.online === false) { openInfoModal('截图测试', '后端未连接（离线预览）。'); return; }
+  openModal({
+    title: '截图测试',
+    body: '<div class="mdw-scr" style="aspect-ratio:9/16;max-height:60vh;width:auto;margin:0 auto">' +
+        '<img id="shot-img" style="width:100%;height:100%;object-fit:contain;display:block" alt="截图"/>' +
+      '</div>' +
+      '<div class="mdw-muted" style="margin-top:8px;font-size:12px" id="shot-msg">正在截图…</div>',
+    buttons: [
+      { label: '刷新', onClick: function () { loadShot(); return false; } },
+      { label: '关闭', primary: true },
+    ],
+  });
+  loadShot();
+  function loadShot() {
+    var msg = document.getElementById('shot-msg');
+    if (msg) msg.textContent = '正在截图…（约 1~2 秒）';
+    var img = document.getElementById('shot-img');
+    if (!img) return;
+    var probe = new Image();
+    probe.onload = function () { img.src = probe.src; if (msg) msg.textContent = '截图成功（' + new Date().toLocaleTimeString() + '）'; };
+    probe.onerror = function () {
+      fetch('/api/device/screenshot?t=' + Date.now()).then(function (r) { return r.json(); }).then(function (d) {
+        if (msg) msg.textContent = '失败：' + (d && d.error ? d.error : '未知错误');
+      }).catch(function () { if (msg) msg.textContent = '失败：设备未连接'; });
+    };
+    probe.src = '/api/device/screenshot?t=' + Date.now();
+  }
+}
+
+/* 连接配置（全局共用）：与 设置→连接设置 同源（/api/connection），此处改动即时保存 */
 function renderGlobalConfig() {
+  var c = CONNECTION || {};
   return '<div class="mdw-config-global">' +
-    '<div class="mdw-config-global-head">全局共用配置</div>' +
-    rowHtml(checkHtml('账号切换', false, 'g-account-switch') + helpHtml('仅支持切换至已登录的账号，用登录名查找即可。')) +
-    rowHtml(checkHtml('是否启动客户端', true, 'g-start-game') + helpHtml('作用于整队任务。')) +
-    blockHtml('客户端类型', selectHtml(CLIENTS, 'Official', 'g-client-type'), 'MAA 会根据客户端类型选择对应资源与任务参数。') +
-    rowHtml(checkHtml('自动检测连接', true, 'g-auto-detect')) +
-    blockHtml('连接配置', selectHtml(CONN_CONFIGS, 'General', 'g-conn-config'), 'MAA Core 内置的识别与截图策略。') +
-    blockHtml('ADB 路径', '<div style="display:flex;gap:6px;align-items:center">' + textHtml('g-adb-path', '', '留空使用容器内 /usr/bin/adb', true) + '<button type="button" class="app-btn" style="font-size:13px;padding:4px 10px">选择</button></div>', '指定 adb 文件位置。') +
-    blockHtml('连接地址', selectHtml([['192.168.31.190:5555', '192.168.31.190:5555'], ['127.0.0.1:7555', '127.0.0.1:7555']], '192.168.31.190:5555', 'g-address'), '设备 IP + 端口。') +
-    blockHtml('触控模式', selectHtml(TOUCH_MODES, 'minitouch', 'g-touch-mode'), '实例级参数 AsstSetInstanceOption(TouchMode)。') +
+    '<div class="mdw-config-global-head">连接配置（全局共用 · 改动即时保存）</div>' +
+    rowHtml(checkHtml('自动检测连接', c.autoDetect !== false, 'g-auto-detect') + helpHtml('MaaCore 启动时自动检测设备连接参数。')) +
+    blockHtml('连接配置', selectHtml(CONN_CONFIGS, c.config || 'General', 'g-conn-config'), 'MaaCore 内置的识别与截图策略。') +
+    blockHtml('ADB 路径', textHtml('g-adb-path', c.adbPath || '', '留空使用容器内 /usr/bin/adb', true), '指定 adb 文件位置。') +
+    blockHtml('连接地址', textHtml('g-address', c.address || '', '设备 IP + 端口，如 192.168.31.143:5555', true), '设备 IP + 端口。') +
+    blockHtml('触控模式', selectHtml(TOUCH_MODES, c.touchMode || 'minitouch', 'g-touch-mode'), '实例级参数 AsstSetInstanceOption(TouchMode)。手机建议 MaaTouch/ADB；模拟器按对应品牌选择。') +
+    blockHtml('客户端类型', selectHtml(CLIENTS, c.clientType || 'Official', 'g-client-type'), '与当前账号和资源包保持一致。') +
     rowHtml('<button type="button" class="app-btn" id="g-screenshot-test">截图测试</button>') +
+    '<div class="mdw-muted" style="font-size:12px">账号切换 / 是否启动客户端 在「开始唤醒」任务面板里配置。</div>' +
     '</div>';
+}
+
+/* 全局连接块的字段绑定（改动即存 + 截图测试） */
+function bindGlobalConfig(el) {
+  ['g-auto-detect', 'g-conn-config', 'g-touch-mode', 'g-client-type'].forEach(function (id) {
+    var f = el.querySelector('#' + id);
+    if (f) f.addEventListener('change', function () {
+      // 自动检测连接 checkbox 的值在 collectConnection 里读 checked
+      saveConnection();
+    });
+  });
+  ['g-adb-path', 'g-address'].forEach(function (id) {
+    var f = el.querySelector('#' + id);
+    if (f) f.addEventListener('change', saveConnection);
+  });
+  var shot = el.querySelector('#g-screenshot-test');
+  if (shot) shot.addEventListener('click', function () { openScreenshotModal(); });
 }
 
 /* ===== Task-Specific Config Panels ===== */
@@ -1864,6 +1913,22 @@ function bindTaskEvents(el) {
     if (BACKEND.online === false) { openInfoModal('无法开始', '后端未连接：当前为离线预览模式。'); return; }
     if (!RT.address) { openInfoModal('无法开始', '尚未配置设备地址，请到「设置 → 连接设置」填写 ADB 地址。'); return; }
 
+    // 理智作战前置检查：没有关卡（当前关卡为空且周计划未命中）时阻止下发
+    if (checked.indexOf('fight') >= 0) {
+      var wp = (TASK_CFG.fight && TASK_CFG.fight.weekly_plan) || {};
+      var todayStages = [];
+      if (wp.enabled) {
+        var keys2 = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+        todayStages = (wp[keys2[new Date().getDay()]] || []).filter(Boolean);
+      }
+      var stage = (document.getElementById('f-stage') || {}).value ||
+                  (TASK_CFG.fight && TASK_CFG.fight.stage) || '';
+      if (!todayStages.length && !stage) {
+        openInfoModal('无法开始', '理智作战未配置关卡：请在理智作战面板选择「当前关卡」，或启用并填写「关卡周计划」。');
+        return;
+      }
+    }
+
     saveTaskConfig();              // 先把当前配置写盘，runner 会读它
     startBtn.disabled = true;
     startBtn.textContent = '下发中…';
@@ -1943,6 +2008,9 @@ function bindConfigEvents(el) {
 
   // 更换主题：动态主题名列表
   bindSwitchThemeEvents(el);
+
+  // 全局连接块：绑定保存与截图测试
+  bindGlobalConfig(el);
 
   // 理智作战周计划交互
   var wpEn2 = el.querySelector('#f-weekly-en');
@@ -3375,15 +3443,26 @@ function applyTheme(mode) {
   try { localStorage.setItem('mdw-theme', mode); } catch (e) { }
 }
 
+function collectConnection() {
+  function val(a, b) {
+    var x = document.getElementById(a), y = document.getElementById(b);
+    return ((x || y) || {}).value;
+  }
+  return {
+    address: val('cs-address', 'g-address') || '',
+    adbPath: val('cs-adbPath', 'g-adb-path') || '',
+    config: val('cs-config', 'g-conn-config') || 'General',
+    touchMode: val('cs-touchMode', 'g-touch-mode') || 'minitouch',
+    clientType: val('cs-clientType', 'g-client-type') || 'Official',
+  };
+  // 自动检测连接：只有任务页的全局块里有该复选框，存在时才发送（服务端接受布尔值）
+  var adEl = document.getElementById('g-auto-detect');
+  if (adEl) payload.autoDetect = adEl.checked ? 'true' : 'false';
+}
+
 function saveConnection() {
   if (BACKEND.online === false) return;
-  var payload = {
-    address: (document.getElementById('cs-address') || {}).value || '',
-    adbPath: (document.getElementById('cs-adbPath') || {}).value || '',
-    config: (document.getElementById('cs-config') || {}).value || 'General',
-    touchMode: (document.getElementById('cs-touchMode') || {}).value || 'minitouch',
-    clientType: (document.getElementById('cs-clientType') || {}).value || 'Official',
-  };
+  var payload = collectConnection();
   CONNECTION = Object.assign(CONNECTION, payload);
   if (payload.address) DEVICE.address = payload.address;
   PUT('/api/connection', payload).then(function () {

@@ -296,6 +296,7 @@ const routes = {
     const clean = {};
     for (const key of ['address', 'addressType', 'config', 'sn', 'clientType', 'adbPath', 'touchMode', 'autoDetect', 'alwaysAutoDetect']) {
       if (typeof body[key] === 'string') clean[key] = body[key].slice(0, 256);
+      if ((key === 'autoDetect' || key === 'alwaysAutoDetect') && typeof body[key] === 'boolean') clean[key] = body[key];
     }
     const file = path.join(config.CONFIG_DIR(), 'connection.json');
     require('node:fs').writeFileSync(file, JSON.stringify(clean, null, 2) + '\n', 'utf8');
